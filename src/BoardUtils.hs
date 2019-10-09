@@ -104,6 +104,7 @@ createPlayerEntry smallBlindId cnt (_id, cards, money) =
                     , playerBet   = initialBet
                     , playerCards = cards
                     , playerMoney = money - initialBet
+                    , playerName  = ""
                     , isInGame    = True
                     }
   in (_id, player)

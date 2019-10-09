@@ -21,6 +21,7 @@ data Player = Player
   , playerBet   :: Int
   , playerCards :: [Card]
   , playerMoney :: Int
+  , playerName  :: String
   , isInGame    :: Bool
   } deriving (Eq, Generic, Show)
 

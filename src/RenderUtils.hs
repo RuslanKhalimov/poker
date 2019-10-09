@@ -29,7 +29,7 @@ backgroundColor   = makeColor255 29 39 48
 makeColor255 :: Float -> Float -> Float -> Gloss.Color
 makeColor255 r g b = Gloss.makeColor (r / 255) (g / 255) (b / 255) 1
 
-(borderWidth, borderHeight)             = (50, 50)
+(borderWidth, borderHeight)             = (70, 70)
 (buttonWidth, buttonHeight)             = (100, 43 :: Float)
 (cardWidth, cardHeight)                 = (70, 100)
 (deskWidth, deskHeight)                 = (700, 400)
@@ -48,11 +48,13 @@ renderComponent :: Float -> Float -> [Gloss.Picture] -> Gloss.Picture
 renderComponent x y components = Gloss.translate x y . Gloss.pictures $ components
 
 renderInt :: Gloss.Color -> Float -> Float -> Int -> Gloss.Picture
-renderInt color x y = Gloss.translate x y
-                    . Gloss.scale 0.1 0.1
-                    . Gloss.color color
-                    . Gloss.text
-                    . show
+renderInt color x y = renderString color x y . show
+
+renderString :: Gloss.Color -> Float -> Float -> String -> Gloss.Picture
+renderString color x y = Gloss.translate x y
+                       . Gloss.scale 0.1 0.1
+                       . Gloss.color color
+                       . Gloss.text
 
 renderRectangle :: Gloss.Color -> Float -> Float -> Gloss.Picture
 renderRectangle color width height = Gloss.color color
@@ -103,14 +105,10 @@ renderMessage :: Board -> Gloss.Picture
 renderMessage board
   | needAction board = getMessagePicture "YOUR TURN"
   | needAnyKey board = getMessagePicture "PRESS ANY KEY"
-  | otherwise        = getMessagePicture "WAIT OTHER PLAYERS"
+  | otherwise        = getMessagePicture $ "WAITING FOR " ++ playerName (players board Map.! activePlayerId board)
     where
       getMessagePicture :: String -> Gloss.Picture
-      getMessagePicture message = Gloss.translate (-deskWidth / 2 + 50) 0
-                                . Gloss.scale 0.1 0.1
-                                . Gloss.color Gloss.black
-                                . Gloss.text
-                                $ message
+      getMessagePicture message = renderString Gloss.black (-deskWidth / 2 + 50) 0 message
 
 renderOnBoardCards :: Images -> [Card] -> Gloss.Picture
 renderOnBoardCards images cards = Gloss.pictures
@@ -143,10 +141,16 @@ renderCards images player =
 renderPlayerInfo :: Player -> Gloss.Picture
 renderPlayerInfo player =
   if isInGame player
-  then playerInfoBuilder (playerId player)
+  then
+    let
+      [y1, y2, y3] = if playerId player == 1 then [(-30), (-15), 0] else [0, (-20), (-40)]
+    in playerInfoBuilder (playerId player)
      . Gloss.pictures
-     $ [ renderInt Gloss.white (-40) 0 $ playerBet   player
-       , renderInt Gloss.white   20  0 $ playerMoney player
+     $ [ renderInt    Gloss.white (-40) y1 $ playerBet   player
+       , renderString Gloss.white (-45) y2 $ "BET"
+       , renderInt    Gloss.white   25  y1 $ playerMoney player
+       , renderString Gloss.white   15  y2 $ "MONEY"
+       , renderString Gloss.white (-10) y3 $ playerName  player
        ]
   else
     Gloss.blank
@@ -172,9 +176,9 @@ playerCardsBuilder 2 = Gloss.translate (cardHeight / 2 - deskWidth / 2) 0 . Glos
 playerCardsBuilder 3 = Gloss.translate (deskWidth / 2 - cardHeight / 2) 0 . Gloss.rotate 90
 playerCardsBuilder _ = const Gloss.blank
 
-playerInfoBuilder :: Int -> (Gloss.Picture ->  Gloss.Picture)
-playerInfoBuilder 0 = Gloss.translate 0 (cardHeight - deskHeight / 2 + 5)
-playerInfoBuilder 1 = Gloss.translate 0 (deskHeight / 2 - cardHeight - 15)
-playerInfoBuilder 2 = Gloss.translate (cardHeight - deskWidth / 2 + 10) 0 . Gloss.rotate 90
-playerInfoBuilder 3 = Gloss.translate (deskWidth / 2 - cardHeight - 10) 0 . Gloss.rotate 270
+playerInfoBuilder :: Int -> (Gloss.Picture -> Gloss.Picture)
+playerInfoBuilder 0 = Gloss.translate 0 (-deskHeight / 2 - 20)
+playerInfoBuilder 1 = Gloss.translate 0 ( deskHeight / 2 + 35)
+playerInfoBuilder 2 = Gloss.translate (-deskWidth / 2 - 20) 0 . Gloss.rotate 90
+playerInfoBuilder 3 = Gloss.translate ( deskWidth / 2 + 20) 0 . Gloss.rotate 270
 playerInfoBuilder _ = const Gloss.blank

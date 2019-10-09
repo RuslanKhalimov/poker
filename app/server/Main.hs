@@ -12,12 +12,11 @@ import           System.Environment             (getArgs)
 import           System.Exit                    (exitFailure)
 import           System.Time                    (ClockTime(TOD), getClockTime)
 
-import Board      (Board (..), Hand(Showdown), Player (..))
-import BoardUtils ( createBoard, fillBanks, getCardSets, getNextId, getNextPlayerId, giveMoney
-                  , hideCards, isGameFinished, isRoundFinished, kickPlayers, mergeBoards)
-import CardUtils  (handValueFromCardSet)
+import           Board     (Board (..), Hand(Showdown), Player (..))
+import qualified BoardUtils as BU
+import           CardUtils (handValueFromCardSet)
 
-type Connections = Map.Map Int Socket
+type Connections = Map.Map Int (String, Socket)
 
 main :: IO()
 main = withSocketsDo $ do
@@ -28,11 +27,11 @@ main = withSocketsDo $ do
                                                                  putStrLn "Excpected <port> <playersCount>"
                                                                  exitFailure
 
-  initialBoard <- createBoard 0 playersCount
+  initialBoard <- BU.createBoard 0 playersCount
 
   addr <- resolve port
   (TOD sec _) <- getClockTime
-  bracket (open addr playersCount) close (runServer ("saves/" ++ show sec ++ ".txt") initialBoard)
+  bracket (open addr playersCount) close (runServer ("saves/" ++ show sec) initialBoard)
 
 resolve :: String -> IO AddrInfo
 resolve port = do
@@ -52,14 +51,15 @@ open addr playersCount = do
 
 runServer :: FilePath -> Board -> Socket -> IO ()
 runServer filePath board sock = do
-  connections <- mapM (waitPlayerConnection sock) [0..playersCount board - 1]
-  gameLoop filePath 0 (Map.fromList connections) board
+  connections <- fmap Map.fromList $ mapM (waitPlayerConnection sock) [0..playersCount board - 1]
+  gameLoop filePath 0 connections board { players = Map.map (\p -> p { playerName = fst $ connections Map.! playerId p }) (players board) }
 
-waitPlayerConnection :: Socket -> Int -> IO (Int, Socket)
+waitPlayerConnection :: Socket -> Int -> IO (Int, (String, Socket))
 waitPlayerConnection sock _id = do
   (clientSock, addr) <- accept sock
-  putStrLn $ show addr ++ " connected"
-  return (_id, clientSock)
+  name               <- fmap decode $ recv clientSock 32
+  putStrLn $ name ++ " from " ++ show addr ++ " connected"
+  return (_id, (name, clientSock))
 
 appendToFile :: FilePath -> Board -> IO ()
 appendToFile filePath board = do
@@ -70,24 +70,24 @@ gameLoop :: FilePath -> Int -> Connections -> Board -> IO ()
 gameLoop filePath firstPlayerId connections board = do
   mapM_ (sendBoard True board) $ Map.toList connections
   receivedBoard <- recvBoard (connections Map.! activePlayerId board)
-  let mergedBoard = mergeBoards receivedBoard board
-  let newBoard    = mergedBoard { activePlayerId = getNextPlayerId mergedBoard }
+  let mergedBoard = BU.mergeBoards receivedBoard board
+  let newBoard    = mergedBoard { activePlayerId = BU.getNextPlayerId mergedBoard }
   appendToFile filePath newBoard
-  if isRoundFinished newBoard
+  if BU.isRoundFinished newBoard
   then do
     finalBoard <- finishRound firstPlayerId connections newBoard
     appendToFile filePath finalBoard
-    if isGameFinished finalBoard
+    if BU.isGameFinished finalBoard
     then
       finishGame filePath connections
     else
-      gameLoop filePath (getNextId firstPlayerId finalBoard) connections finalBoard
+      gameLoop filePath (BU.getNextId firstPlayerId finalBoard) connections finalBoard
   else
     if stepsInRound newBoard == playersCount newBoard
     then do
       let finalBoard = newBoard { visibleOnBoardCards = succ $ visibleOnBoardCards newBoard
                                 , stepsInRound        = 0
-                                , banks               = banks $ fillBanks newBoard
+                                , banks               = banks $ BU.fillBanks newBoard
                                 , players             = Map.map (\p -> p { playerBet = 0 }) (players newBoard)
                                 }
       appendToFile filePath finalBoard
@@ -95,24 +95,24 @@ gameLoop filePath firstPlayerId connections board = do
     else
       gameLoop filePath firstPlayerId connections newBoard
 
-sendBoard :: Bool -> Board -> (Int, Socket) -> IO ()
-sendBoard needHide board (_id, sock) = sendAll sock
-                                     . encode
-                                     . (if needHide
-                                       then hideCards (visibleOnBoardCards board) _id
-                                       else (\b -> b { needAction = False, needAnyKey = True }))
-                                     $ board
+sendBoard :: Bool -> Board -> (Int, (String, Socket)) -> IO ()
+sendBoard needHide board (_id, (name, sock)) = sendAll sock
+                                                   . encode
+                                                   . (if needHide
+                                                     then BU.hideCards (visibleOnBoardCards board) _id
+                                                     else (\b -> b { needAction = False, needAnyKey = True }))
+                                                   $ board
 
-recvBoard :: Socket -> IO Board
-recvBoard sock = fmap decode $ recv sock 512
+recvBoard :: (String, Socket) -> IO Board
+recvBoard (_, sock) = fmap decode $ recv sock 512
 
 finishRound :: Int -> Connections -> Board -> IO Board
 finishRound firstPlayerId connections board = do
-  let cardSets   = getCardSets board
+  let cardSets   = BU.getCardSets board
   let handValues = Map.map handValueFromCardSet cardSets
-  let finalBoard = kickPlayers
-                 . giveMoney handValues (banks board)
-                 $ board { banks               = banks $ fillBanks board
+  let finalBoard = BU.kickPlayers
+                 . BU.giveMoney handValues (banks board)
+                 $ board { banks               = banks $ BU.fillBanks board
                          , visibleOnBoardCards = Showdown
                          , activePlayerId      = -1
                          , players             = Map.map (\p -> p { playerBet = 0 }) (players board)
@@ -121,7 +121,7 @@ finishRound firstPlayerId connections board = do
   mapM_ (sendBoard False finalBoard) $ Map.toList connections
   mapM_ recvBoard connections
 
-  newBoard <- createBoard (getNextId firstPlayerId board) (playersCount finalBoard)
+  newBoard <- BU.createBoard (BU.getNextId firstPlayerId board) (playersCount finalBoard)
   return newBoard { players = Map.map (\p -> p { playerMoney = playerMoney $ players finalBoard Map.! playerId p }) (players newBoard) }
 
 finishGame :: FilePath -> Connections -> IO ()

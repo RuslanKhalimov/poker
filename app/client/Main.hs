@@ -18,14 +18,15 @@ import Board    (Board)
 main :: IO ()
 main = withSocketsDo $ do
   args <- getArgs
-  (ip, port) <- case args of ip:port:[] -> return (ip, port)
-                             _          -> do
-                                             putStrLn "IncorrectArguments"
-                                             putStrLn "Excpected <ip> <port>"
-                                             exitFailure
+  (name, ip, port) <- case args of
+                              [name, ip, port] -> return (name, ip, port)
+                              _                      -> do
+                                                          putStrLn "IncorrectArguments"
+                                                          putStrLn "Excpected <name> <ip> <port>"
+                                                          exitFailure
 
   addr <- resolve ip port
-  bracket (open addr) close runClient
+  bracket (open name addr) close runClient
 
 resolve :: String -> String -> IO AddrInfo
 resolve host port = do
@@ -33,10 +34,11 @@ resolve host port = do
   addrInfo:_ <- getAddrInfo (Just hints) (Just host) (Just port)
   return addrInfo
 
-open :: AddrInfo -> IO Socket
-open addr = do
+open :: String -> AddrInfo -> IO Socket
+open name addr = do
   sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   connect sock (addrAddress addr)
+  sendAll sock $ encode name
   return sock
 
 runClient :: Socket -> IO ()
