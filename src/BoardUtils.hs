@@ -191,10 +191,10 @@ fillBanks :: Board -> Board
 fillBanks board =
   let
     bank:bs       = banks board
-    playerBets    = Map.filter (> 0) . Map.map playerBet $ players board
+    playerBets    = Map.map playerBet . Map.filter isInGame . players $ board
     minBet        = minimum playerBets
     newBank       = bank { money = money bank + (sum . Map.map playerBet . players $ board) }
-    newPlayerBets = Map.map (+ (-minBet)) playerBets
+    newPlayerBets = Map.map (`subtract` minBet) playerBets
   in
     if all (== minBet) playerBets
     then
@@ -203,10 +203,10 @@ fillBanks board =
             }
     else
       let newPlayers = Map.map (\p -> p { playerBet = newPlayerBets Map.! playerId p } ) (players board) in
-      board { banks  = (Bank { money = 0
+      board { banks   = (Bank { money = sum . Map.map playerBet . players $ board
                               , participants = Map.keysSet $ Map.filter ((> 0) . playerBet) newPlayers
                               }
-                         ) : newBank : bs
+                        ) : bank : bs
             , players = newPlayers
             }
 
