@@ -27,7 +27,7 @@ makeBet board = modifyActivePlayer mapper $ board { needAction   = False
                                                   , stepsInRound = stepsInRound board + 1
                                                   }
   where
-    mapper player = player { playerBet   = min (playerBet player + currentBet board) (playerMoney player)
+    mapper player = player { playerBet   = playerBet player + min (currentBet board) (playerMoney player)
                            , playerMoney = max 0 (playerMoney player - currentBet board)
                            }
 
