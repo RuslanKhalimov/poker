@@ -121,8 +121,8 @@ finishRound firstPlayerId connections board = do
   mapM_ (sendBoard False finalBoard) $ Map.toList connections
   mapM_ recvBoard connections
 
-  newBoard <- BU.createBoard (BU.getNextId firstPlayerId board) (playersCount finalBoard)
-  return newBoard { players = Map.map (\p -> p { playerMoney = playerMoney $ players finalBoard Map.! playerId p }) (players newBoard) }
+  (TOD time _) <- getClockTime
+  return $ BU.nextDeal time (BU.getNextId firstPlayerId board) False finalBoard
 
 finishGame :: FilePath -> Connections -> IO ()
 finishGame filePath connections = do

@@ -18,11 +18,12 @@ module BoardUtils
   , nextDeal
   ) where
 
+import           Data.List             (zip4)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import System.Random           (StdGen, mkStdGen)
-import System.Random.Shuffle   (shuffle')
-import System.Time             (ClockTime (TOD), getClockTime)
+import           System.Random         (StdGen, mkStdGen)
+import           System.Random.Shuffle (shuffle')
+import           System.Time           (ClockTime (TOD), getClockTime)
 
 import Board       (Bank (..), Board (..), Hand (..), Player (..), Players)
 import Card        (Card (..), CardValue, HandValue)
@@ -53,47 +54,55 @@ dealCards cnt deck acc = dealCards (cnt - 1) (drop 2 deck) (take 2 deck : acc)
 
 createBoard :: Int -> Int -> IO Board
 createBoard smallBlindId cnt = do
-  (TOD sec _) <- getClockTime
-  let gen = mkStdGen $ fromInteger sec
-  return $ createBoardUsingGen gen smallBlindId cnt
+  (TOD time _) <- getClockTime
+  return $ createBoardUsingGen time smallBlindId cnt
 
-nextDeal :: StdGen -> Int -> Int -> Bool -> Board -> Board
-nextDeal gen smallBlindId cnt isFirstTime board =
-  let money                   = if isFirstTime
+nextDeal :: Integer -> Int -> Bool -> Board -> Board
+nextDeal time smallBlindId isFirstTime board =
+  let cnt                     = playersCount board
+      gen                     = mkStdGen $ fromInteger time
+      (money, names)          = if isFirstTime
                                 then
-                                  replicate cnt initialMoney
+                                  (replicate cnt initialMoney, replicate cnt "")
                                 else
-                                  map snd . Map.toList . (Map.map playerMoney) . players $ board
+                                  ( map snd . Map.toList . (Map.map playerMoney) . players $ board
+                                  , map snd . Map.toList . (Map.map playerName ) . players $ board
+                                  )
       deck                    = map toEnum $ shuffle' [0..51] 52 gen
       (onBoard, playersCards) = dealCards cnt deck []
-      createdPlayers          = createPlayers smallBlindId cnt (map (map Card) playersCards) money
+      createdPlayers          = createPlayers smallBlindId cnt (map (map Card) playersCards) money names
   in
-    board { onBoardCards = map Card onBoard
-          , players      = createdPlayers
+    board { onBoardCards        = map Card onBoard
+          , visibleOnBoardCards = PreFlop
+          , players             = createdPlayers
+          , activePlayerId      = nextPlayerId cnt . nextPlayerId cnt $ smallBlindId
+          , currentBet          = 0
+          , stepsInRound        = 0
+          , banks               = [Bank (Set.fromList [0..cnt]) 0]
           }
 
-createBoardUsingGen :: StdGen -> Int -> Int -> Board
-createBoardUsingGen gen smallBlindId cnt =
-  nextDeal gen smallBlindId cnt True $ Board { onBoardCards        = []
-                                             , visibleOnBoardCards = PreFlop
-                                             , playersCount        = cnt
-                                             , activePlayerId      = nextPlayerId cnt . nextPlayerId cnt $ smallBlindId
-                                             , needAction          = True
-                                             , needAnyKey          = False
-                                             , currentBet          = 0
-                                             , stepsInRound        = 0
-                                             , banks               = [Bank (Set.fromList [0..cnt]) 0]
-                                             , timer               = 30
-                                             , players             = Map.empty
-                                             }
+createBoardUsingGen :: Integer -> Int -> Int -> Board
+createBoardUsingGen time smallBlindId cnt =
+  nextDeal time smallBlindId True $ Board { onBoardCards        = []
+                                          , visibleOnBoardCards = PreFlop
+                                          , playersCount        = cnt
+                                          , activePlayerId      = -1
+                                          , needAction          = True
+                                          , needAnyKey          = False
+                                          , currentBet          = 0
+                                          , stepsInRound        = 0
+                                          , banks               = [Bank (Set.fromList [0..cnt]) 0]
+                                          , timer               = 30
+                                          , players             = Map.empty
+                                          }
 
-createPlayers :: Int -> Int -> [[Card]] -> [Int] -> Players
-createPlayers smallBlindId cnt cards money  = Map.fromList
-                                            . map (createPlayerEntry smallBlindId cnt)
-                                            $ zip3 [0..(cnt - 1)] cards money
+createPlayers :: Int -> Int -> [[Card]] -> [Int] -> [String] -> Players
+createPlayers smallBlindId cnt cards money names  = Map.fromList
+                                                  . map (createPlayerEntry smallBlindId cnt)
+                                                  $ zip4 [0..(cnt - 1)] cards money names
 
-createPlayerEntry :: Int -> Int -> (Int, [Card], Int) -> (Int, Player)
-createPlayerEntry smallBlindId cnt (_id, cards, money) =
+createPlayerEntry :: Int -> Int -> (Int, [Card], Int, String) -> (Int, Player)
+createPlayerEntry smallBlindId cnt (_id, cards, money, name) =
   let
     initialBet = if smallBlindId == _id
                  then smallBlind
@@ -104,7 +113,7 @@ createPlayerEntry smallBlindId cnt (_id, cards, money) =
                     , playerBet   = initialBet
                     , playerCards = cards
                     , playerMoney = money - initialBet
-                    , playerName  = ""
+                    , playerName  = name
                     , isInGame    = True
                     }
   in (_id, player)
