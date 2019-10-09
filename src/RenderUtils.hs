@@ -103,9 +103,10 @@ renderBanks = Gloss.pictures . zipWith ($) banksBuilder . map money
 
 renderMessage :: Board -> Gloss.Picture
 renderMessage board
-  | needAction board = getMessagePicture "YOUR TURN"
-  | needAnyKey board = getMessagePicture "PRESS ANY KEY"
-  | otherwise        = getMessagePicture $ "WAITING FOR " ++ playerName (players board Map.! activePlayerId board)
+  | needAction board           = getMessagePicture "YOUR TURN"
+  | needAnyKey board           = getMessagePicture "PRESS ANY KEY"
+  | activePlayerId board == -1 = getMessagePicture "WAITING FOR OTHERS"
+  | otherwise                  = getMessagePicture $ "WAITING FOR " ++ playerName (players board Map.! activePlayerId board)
     where
       getMessagePicture :: String -> Gloss.Picture
       getMessagePicture message = renderString Gloss.black (-deskWidth / 2 + 50) 0 message
