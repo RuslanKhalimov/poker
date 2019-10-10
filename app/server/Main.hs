@@ -64,8 +64,7 @@ gameLoop :: Int -> Connections -> Board -> IO ()
 gameLoop firstPlayerId connections board = do
   mapM_ (sendBoard True board) $ Map.toList connections
   receivedBoard <- recvBoard (connections Map.! activePlayerId board)
-  let mergedBoard = BU.mergeBoards receivedBoard board
-  let newBoard    = mergedBoard { activePlayerId = BU.getNextPlayerId mergedBoard }
+  let newBoard = BU.mergeBoards receivedBoard board
   if BU.isRoundFinished newBoard
   then do
     finalBoard <- finishRound firstPlayerId connections newBoard
@@ -84,7 +83,7 @@ gameLoop firstPlayerId connections board = do
                                 }
       gameLoop firstPlayerId connections finalBoard
     else
-      gameLoop firstPlayerId connections newBoard
+      gameLoop firstPlayerId connections newBoard { activePlayerId = BU.getNextPlayerId newBoard }
 
 sendBoard :: Bool -> Board -> (Int, (String, Socket)) -> IO ()
 sendBoard needHide board (_id, (name, sock)) = sendAll sock
@@ -102,7 +101,7 @@ finishRound firstPlayerId connections board = do
   let cardSets   = BU.getCardSets board
   let handValues = Map.map handValueFromCardSet cardSets
   let finalBoard = BU.kickPlayers
-                 . BU.giveMoney handValues (banks board)
+                 . BU.giveMoney handValues
                  $ board { banks               = banks $ BU.fillBanks board
                          , visibleOnBoardCards = Showdown
                          , activePlayerId      = -1
@@ -115,6 +114,6 @@ finishRound firstPlayerId connections board = do
   (TOD time _) <- getClockTime
   return $ BU.nextDeal time (BU.getNextId firstPlayerId board) False finalBoard
 
-finishGame :: FilePath -> Connections -> IO ()
-finishGame filePath connections = do
-  return ()
+finishGame :: Connections -> Board -> IO ()
+finishGame connections board = do
+  mapM_ (sendBoard False board) $ Map.toList connections

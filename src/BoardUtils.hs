@@ -78,7 +78,7 @@ nextDeal time smallBlindId isFirstTime board =
           , activePlayerId      = nextPlayerId cnt . nextPlayerId cnt $ smallBlindId
           , currentBet          = 0
           , stepsInRound        = 0
-          , banks               = [Bank (Set.fromList [0..cnt]) 0]
+          , banks               = [Bank (Set.fromList [0..cnt - 1]) 0]
           }
 
 createBoardUsingGen :: Integer -> Int -> Int -> Board
@@ -91,7 +91,7 @@ createBoardUsingGen time smallBlindId cnt =
                                           , needAnyKey          = False
                                           , currentBet          = 0
                                           , stepsInRound        = 0
-                                          , banks               = [Bank (Set.fromList [0..cnt]) 0]
+                                          , banks               = [Bank (Set.fromList [0..cnt - 1]) 0]
                                           , timer               = 30
                                           , players             = Map.empty
                                           }
@@ -131,6 +131,7 @@ isRoundFinished :: Board -> Bool
 isRoundFinished board = visibleOnBoardCards board == Showdown
                      || (Map.size $ Map.filter isInGame (players board)) == 1
                      || (Map.size $ Map.filter ((> 0) . playerMoney) (players board)) < 2
+                     && all (\p -> playerBet p == getMaxBet board || playerMoney p == 0) (players board)
 
 isGameFinished :: Board -> Bool
 isGameFinished board = 1 == (Map.size $ Map.filter ((> 0) . playerMoney) (players board))
@@ -142,10 +143,13 @@ kickPlayers board = board { playersCount = Map.size newPlayers
   where
     newPlayers = Map.filter ((> 0) . playerMoney) (players board)
 
-giveMoney :: Map.Map Int HandValue -> [Bank] -> Board -> Board
-giveMoney _          []        board = board
-giveMoney handValues (bank:bs) board = giveMoney handValues bs board { players = Map.map (giveMoneyToPlayer bank) (players board) }
+giveMoney :: Map.Map Int HandValue -> Board -> Board
+giveMoney handValues board = _giveMoney handValues (banks board) board
   where
+    _giveMoney :: Map.Map Int HandValue -> [Bank] -> Board -> Board
+    _giveMoney _          []        board = board
+    _giveMoney handValues (bank:bs) board = _giveMoney handValues bs board { players = Map.map (giveMoneyToPlayer bank) (players board) }
+
     giveMoneyToPlayer :: Bank -> Player -> Player
     giveMoneyToPlayer bank player =
       let _participants   = Map.filterWithKey (\k _ -> Set.member k (participants bank)) handValues
