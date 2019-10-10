@@ -131,8 +131,7 @@ finishRound :: Int -> [Connection] -> [SharedInfo] -> Board -> IO Board
 finishRound firstPlayerId connections clientMVars board = do
   let cardSets   = BU.getCardSets board
   let handValues = Map.map handValueFromCardSet cardSets
-  let finalBoard = BU.kickPlayers
-                 . BU.giveMoney handValues
+  let finalBoard = BU.giveMoney handValues
                  $ board { banks               = banks $ BU.fillBanks board
                          , visibleOnBoardCards = Showdown
                          , activePlayerId      = -1
@@ -143,7 +142,7 @@ finishRound firstPlayerId connections clientMVars board = do
   mapM_ recvAction $ map snd connections
 
   (TOD time _) <- getClockTime
-  return $ BU.nextDeal time (BU.getNextId firstPlayerId board) False finalBoard
+  return $ BU.nextDeal time (BU.getNextId firstPlayerId board) False (BU.kickPlayers finalBoard)
 
 finishGame :: [Connection] -> [SharedInfo] -> Board -> IO ()
 finishGame connections clientMVars board = do
