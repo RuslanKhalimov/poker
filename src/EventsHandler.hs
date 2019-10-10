@@ -36,7 +36,7 @@ deleteCurrentBet board = (board { currentBet = currentBet board `div` 10 }, Noth
 handleCharKey :: Char -> Board -> (Board, Maybe PlayerAction)
 handleCharKey c board
   | c == 'f'  = (board, Just Fold)
-  | c == 'b'  = (board, Just Bet)
+  | c == 'b'  = (board, Just $ Bet (currentBet board) )
   | c == 'c'  = (board, Just Check)
   | isDigit c = (board { currentBet = 10 * (currentBet board) + read [c] }, Nothing)
   | otherwise = (board, Nothing)

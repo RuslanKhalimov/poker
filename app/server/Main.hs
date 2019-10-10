@@ -83,11 +83,11 @@ shareBoard :: Bool -> [Connection] -> [SharedInfo] -> Board -> IO ()
 shareBoard needHide connections clientMVars board = do
   mapM_ (\_id -> putMVar (clientMVars !! _id) (needHide, board)) $ map fst connections
 
-applyAction ::PlayerAction -> Board -> Board
-applyAction Bet   = bet
-applyAction Check = check
-applyAction Fold  = foldCards
-applyAction Ok    = id
+applyAction :: PlayerAction -> Board -> Board
+applyAction (Bet x) = bet x
+applyAction Check   = check
+applyAction Fold    = foldCards
+applyAction Ok      = id
 
 gameLoop :: Int -> [Connection] -> [SharedInfo] -> Board -> IO ()
 gameLoop firstPlayerId connections clientMVars board = do
@@ -109,6 +109,7 @@ gameLoop firstPlayerId connections clientMVars board = do
       let finalBoard = newBoard { visibleOnBoardCards = succ $ visibleOnBoardCards newBoard
                                 , stepsInRound        = 0
                                 , banks               = banks $ BU.fillBanks newBoard
+                                , activePlayerId      = firstPlayerId
                                 , players             = Map.map (\p -> p { playerBet = 0 }) (players newBoard)
                                 }
       gameLoop firstPlayerId connections clientMVars finalBoard
