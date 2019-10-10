@@ -31,9 +31,10 @@ library
     , BoardUtils
     , Card
     , CardUtils
-    , Graphics
-    , RenderUtils
     , EventsHandler
+    , Graphics
+    , PlayerAction
+    , RenderUtils
   hs-source-dirs:
       src
   build-depends:

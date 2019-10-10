@@ -1,8 +1,5 @@
 module EventsHandler
-  ( bet
-  , check
-  , foldCards
-  , handleEvent
+  ( handleEvent
   , waitAnyKey
   ) where
 
@@ -12,38 +9,11 @@ import qualified Graphics.Gloss                   as Gloss
 import           Graphics.Gloss.Data.Point (pointInBox)
 import qualified Graphics.Gloss.Interface.IO.Game as Game
 
-import Board       (Board (..), Player (..))
-import BoardUtils  (getFromActivePlayer, getMaxBet, modifyActivePlayer)
-import RenderUtils (betButtonX, buttonWidth, buttonHeight, checkButtonX, controlPanelY, foldButtonX)
+import Board        (Board (..), Player (..))
+import PlayerAction (PlayerAction (..))
+import RenderUtils  (betButtonX, buttonWidth, buttonHeight, checkButtonX, controlPanelY, foldButtonX)
 
-foldCards :: Board -> Board
-foldCards board = makeBet $ modifyActivePlayer mapper board { currentBet = 0 }
-  where
-    mapper player = player { isInGame = False }
-
-makeBet :: Board -> Board
-makeBet board = modifyActivePlayer mapper $ board { needAction   = False
-                                                  , currentBet   = 0
-                                                  , stepsInRound = stepsInRound board + 1
-                                                  }
-  where
-    mapper player = player { playerBet   = playerBet player + min (currentBet board) (playerMoney player)
-                           , playerMoney = max 0 (playerMoney player - currentBet board)
-                           }
-
-bet :: Board -> Board
-bet board = makeBet board { currentBet   = max (currentBet board) (getMaxBet board - getFromActivePlayer playerBet board)
-                          , stepsInRound = if currentBet board + getFromActivePlayer playerBet board > getMaxBet board
-                                           then
-                                             0
-                                           else
-                                             stepsInRound board
-                          }
-
-check :: Board -> Board
-check board = bet board { currentBet = 0 }
-
-handleEvent :: Game.Event -> Board -> Board
+handleEvent :: Game.Event -> Board -> (Board, Maybe PlayerAction)
 handleEvent (Game.EventKey (Game.Char c)                       Game.Down _ _  ) board = handleCharKey c board
 handleEvent (Game.EventKey (Game.SpecialKey Game.KeyPad0)      Game.Down _ _  ) board = handleCharKey '0' board
 handleEvent (Game.EventKey (Game.SpecialKey Game.KeyPad1)      Game.Down _ _  ) board = handleCharKey '1' board
@@ -58,25 +28,25 @@ handleEvent (Game.EventKey (Game.SpecialKey Game.KeyPad9)      Game.Down _ _  ) 
 handleEvent (Game.EventKey (Game.SpecialKey Game.KeyDelete)    Game.Down _ _  ) board = deleteCurrentBet board
 handleEvent (Game.EventKey (Game.SpecialKey Game.KeyBackspace) Game.Down _ _  ) board = deleteCurrentBet board
 handleEvent (Game.EventKey (Game.MouseButton Game.LeftButton)  Game.Down _ pos) board = handleMouseButton pos board
-handleEvent _                                                                   board = board
+handleEvent _                                                                   board = (board, Nothing)
 
-deleteCurrentBet :: Board -> Board
-deleteCurrentBet board = board { currentBet = currentBet board `div` 10 }
+deleteCurrentBet :: Board -> (Board, Maybe PlayerAction)
+deleteCurrentBet board = (board { currentBet = currentBet board `div` 10 }, Nothing)
 
-handleCharKey :: Char -> Board -> Board
+handleCharKey :: Char -> Board -> (Board, Maybe PlayerAction)
 handleCharKey c board
-  | c == 'f'  = foldCards board
-  | c == 'b'  = bet       board
-  | c == 'c'  = check     board
-  | isDigit c = board { currentBet = 10 * (currentBet board) + read [c] }
-  | otherwise = board
+  | c == 'f'  = (board, Just Fold)
+  | c == 'b'  = (board, Just Bet)
+  | c == 'c'  = (board, Just Check)
+  | isDigit c = (board { currentBet = 10 * (currentBet board) + read [c] }, Nothing)
+  | otherwise = (board, Nothing)
 
-handleMouseButton :: Gloss.Point -> Board -> Board
+handleMouseButton :: Gloss.Point -> Board -> (Board, Maybe PlayerAction)
 handleMouseButton pos board
-  | uncurry (pointInBox pos) (getButtonRect betButtonX)    = bet       board
-  | uncurry (pointInBox pos) (getButtonRect checkButtonX)  = check      board
-  | uncurry (pointInBox pos) (getButtonRect foldButtonX)   = foldCards board
-  | otherwise                                              = board
+  | uncurry (pointInBox pos) (getButtonRect betButtonX)    = handleCharKey 'b' board
+  | uncurry (pointInBox pos) (getButtonRect checkButtonX)  = handleCharKey 'c' board
+  | uncurry (pointInBox pos) (getButtonRect foldButtonX)   = handleCharKey 'f' board
+  | otherwise                                              = handleCharKey '_' board
 
 getButtonRect :: Float -> (Gloss.Point, Gloss.Point)
 getButtonRect xDiff = (p1, p3)
@@ -84,7 +54,7 @@ getButtonRect xDiff = (p1, p3)
     addToPair (x, y) = (x + xDiff, y + controlPanelY)
     [p1, p2, p3, p4] = map addToPair $ Game.rectanglePath buttonWidth buttonHeight
 
-waitAnyKey :: Game.Event -> Board -> Board
-waitAnyKey (Game.EventKey (Game.SpecialKey _) _ _ _) board = board { needAnyKey = False }
-waitAnyKey (Game.EventKey (Game.Char       _) _ _ _) board = board { needAnyKey = False }
-waitAnyKey _                                         board = board
+waitAnyKey :: Game.Event -> Board -> (Board, Maybe PlayerAction)
+waitAnyKey (Game.EventKey (Game.SpecialKey _) _ _ _) board = (board { needAnyKey = False }, Just Ok)
+waitAnyKey (Game.EventKey (Game.Char       _) _ _ _) board = (board { needAnyKey = False }, Just Ok)
+waitAnyKey _                                         board = (board, Nothing)

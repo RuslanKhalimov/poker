@@ -17,6 +17,7 @@ import Board         (Board (..))
 import BoardUtils    (modifyActivePlayer)
 import CardUtils     (fileNameFromCardValue)
 import EventsHandler (handleEvent, waitAnyKey)
+import PlayerAction  (PlayerAction(Fold))
 import RenderUtils   ( backgroundColor, betButtonX, buttonHeight, buttonWidth, checkButtonX
                      , controlPanelY, foldButtonX, renderWorld, screenPos, screenSize)
 
@@ -59,22 +60,21 @@ handler :: Game.Event -> World -> IO World
 handler event world@(_, board) =
   if needAction board
   then
-    handle needAction handleEvent event world
+    handle handleEvent event world
   else if needAnyKey board
   then
-    handle needAnyKey waitAnyKey event world
+    handle waitAnyKey event world
   else
     return world
 
-handle :: (Board -> Bool) -> (Game.Event -> Board -> Board) -> Game.Event -> World -> IO World
-handle predicate callback event (sock, board) = do
-  let newBoard = callback event board
-  if predicate newBoard
-  then
-    return (sock, newBoard)
-  else do
-    sendAll sock . encode $ newBoard
-    return (sock, newBoard)
+handle :: (Game.Event -> Board -> (Board, Maybe PlayerAction)) -> Game.Event -> World -> IO World
+handle callback event (sock, board) = do
+  let (newBoard, action) = callback event board
+  case action of
+    Nothing -> return (sock, newBoard)
+    Just ac -> do
+                 sendAll sock $ encode ac
+                 return (sock, newBoard)
 
 updater :: MVar Board -> Float -> World -> IO World
 updater recvMVar time (sock, board) = do
@@ -82,6 +82,7 @@ updater recvMVar time (sock, board) = do
   let updatedBoard = fromMaybe (board { timer = timer board - time }) receivedBoard
   if needAction board && timer board < 0
   then do
-    handler (Game.EventKey (Game.Char 'f') Game.Down undefined undefined) (sock, board)
+    sendAll sock $ encode Fold
+    return (sock, updatedBoard)
   else
     return (sock, updatedBoard)

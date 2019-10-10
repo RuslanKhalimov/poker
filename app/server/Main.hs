@@ -15,9 +15,10 @@ import           System.Environment             (getArgs)
 import           System.Exit                    (exitFailure)
 import           System.Time                    (ClockTime(TOD), getClockTime)
 
-import           Board     (Board (..), Hand(Showdown), Player (..))
+import           Board        (Board (..), Hand(Showdown), Player (..))
 import qualified BoardUtils as BU
-import           CardUtils (handValueFromCardSet)
+import           CardUtils    (handValueFromCardSet)
+import           PlayerAction (PlayerAction (..), bet, check, foldCards)
 
 type Connection = (Int, Socket)
 type SharedInfo = MVar (Bool, Board)
@@ -82,12 +83,18 @@ shareBoard :: Bool -> [Connection] -> [SharedInfo] -> Board -> IO ()
 shareBoard needHide connections clientMVars board = do
   mapM_ (\_id -> putMVar (clientMVars !! _id) (needHide, board)) $ map fst connections
 
+applyAction ::PlayerAction -> Board -> Board
+applyAction Bet   = bet
+applyAction Check = check
+applyAction Fold  = foldCards
+applyAction Ok    = id
+
 gameLoop :: Int -> [Connection] -> [SharedInfo] -> Board -> IO ()
 gameLoop firstPlayerId connections clientMVars board = do
   shareBoard True connections clientMVars board
+  action <- recvAction (map snd connections !! activePlayerId board)
 
-  receivedBoard <- recvBoard (map snd connections !! activePlayerId board)
-  let newBoard = BU.mergeBoards receivedBoard board
+  let newBoard = BU.mergeBoards (applyAction action board) board
   if BU.isRoundFinished newBoard
   then do
     finalBoard <- finishRound firstPlayerId connections clientMVars newBoard
@@ -116,8 +123,8 @@ sendBoard needHide board (_id, sock) = sendAll sock
                                      else (\b -> b { needAction = False, needAnyKey = True }))
                                      $ board
 
-recvBoard :: Socket -> IO Board
-recvBoard sock = fmap decode $ recv sock 512
+recvAction :: Socket -> IO PlayerAction
+recvAction sock = fmap decode $ recv sock 512
 
 finishRound :: Int -> [Connection] -> [SharedInfo] -> Board -> IO Board
 finishRound firstPlayerId connections clientMVars board = do
@@ -132,7 +139,7 @@ finishRound firstPlayerId connections clientMVars board = do
                          }
 
   shareBoard False connections clientMVars finalBoard
-  mapM_ recvBoard $ map snd connections
+  mapM_ recvAction $ map snd connections
 
   (TOD time _) <- getClockTime
   return $ BU.nextDeal time (BU.getNextId firstPlayerId board) False finalBoard
