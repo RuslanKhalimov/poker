@@ -128,7 +128,8 @@ modifyActivePlayer :: (Player -> Player) -> Board -> Board
 modifyActivePlayer func board = modifyPlayer (activePlayerId board) func board
 
 isRoundFinished :: Board -> Bool
-isRoundFinished board = visibleOnBoardCards board == Showdown
+isRoundFinished board = visibleOnBoardCards board == River
+                     && Map.size (Map.filter isInGame $ players board) == stepsInRound board
                      || (Map.size $ Map.filter isInGame (players board)) == 1
                      || (Map.size $ Map.filter ((> 0) . playerMoney) (players board)) < 2
                      && all (\p -> playerBet p == getMaxBet board || playerMoney p == 0) (players board)

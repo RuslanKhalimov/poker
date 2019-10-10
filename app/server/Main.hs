@@ -104,12 +104,12 @@ gameLoop firstPlayerId connections clientMVars board = do
     else
       gameLoop (BU.getNextId firstPlayerId finalBoard) connections clientMVars finalBoard
   else
-    if stepsInRound newBoard == playersCount newBoard
+    if stepsInRound newBoard == Map.size (Map.filter isInGame $ players newBoard)
     then do
       let finalBoard = newBoard { visibleOnBoardCards = succ $ visibleOnBoardCards newBoard
                                 , stepsInRound        = 0
                                 , banks               = banks $ BU.fillBanks newBoard
-                                , activePlayerId      = firstPlayerId
+                                , activePlayerId      = BU.getNextId firstPlayerId newBoard
                                 , players             = Map.map (\p -> p { playerBet = 0 }) (players newBoard)
                                 }
       gameLoop firstPlayerId connections clientMVars finalBoard

@@ -32,7 +32,9 @@ makeBet board = modifyActivePlayer mapper $ board { needAction   = False
                            }
 
 foldCards :: Board -> Board
-foldCards board = makeBet $ modifyActivePlayer mapper board { currentBet = 0 }
+foldCards board = makeBet $ modifyActivePlayer mapper board { currentBet   = 0
+                                                            , stepsInRound = stepsInRound board - 1
+                                                            }
   where
     mapper player = player { isInGame = False }
 
