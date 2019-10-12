@@ -42,13 +42,15 @@ foldCards board = makeBet $ modifyActivePlayer mapper board { currentBet   = 0
     mapper player = player { isInGame = False }
 
 bet :: Int -> Board -> Board
-bet count board = makeBet board { currentBet   = max count (getMaxBet board - getFromActivePlayer playerBet board)
-                                , stepsInRound = if count + getFromActivePlayer playerBet board > getMaxBet board
+bet count board = makeBet board { currentBet   = _currentBet
+                                , stepsInRound = if _currentBet + getFromActivePlayer playerBet board > getMaxBet board
                                                  then
                                                    0
                                                  else
                                                    stepsInRound board
                                 }
+  where
+    _currentBet = max count (getMaxBet board - getFromActivePlayer playerBet board)
 
 check :: Board -> Board
 check board = bet 0 board

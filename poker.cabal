@@ -63,13 +63,13 @@ test-suite card-utils
       -Wall -Werror -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
-test-suite events
+test-suite player-actions
   type:
       exitcode-stdio-1.0
   hs-source-dirs:
       test
   main-is:
-      EventsTest.hs
+      PlayerActionTest.hs
   build-depends:
       base >=4.7 && <5
     , poker
