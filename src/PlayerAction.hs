@@ -5,10 +5,12 @@ module PlayerAction
   , bet
   , check
   , foldCards
+  , quit
   ) where
 
-import Data.Binary  (Binary)
-import GHC.Generics (Generic)
+import           Data.Binary  (Binary)
+import qualified Data.Map as Map
+import           GHC.Generics (Generic)
 
 import Board      (Board (..), Player (..))
 import BoardUtils (getFromActivePlayer, getMaxBet, modifyActivePlayer)
@@ -17,6 +19,7 @@ data PlayerAction = Fold
                   | Bet Int
                   | Check
                   | Ok
+                  | Quit
   deriving (Generic, Show)
 
 instance Binary PlayerAction where
@@ -49,3 +52,8 @@ bet count board = makeBet board { currentBet   = max count (getMaxBet board - ge
 
 check :: Board -> Board
 check board = bet 0 board
+
+quit :: Board -> Board
+quit board = board { players      = Map.delete (activePlayerId board) (players board)
+                   , playersCount = playersCount board - 1
+                   }

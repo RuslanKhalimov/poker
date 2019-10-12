@@ -3,8 +3,8 @@ module Main
  ) where
 
 import Control.Concurrent.MVar        (MVar, newMVar, putMVar )
-import Control.Concurrent             (forkIO)
-import Control.Exception              (bracket)
+import Control.Concurrent             (forkFinally)
+import Control.Exception              (SomeException, bracket)
 import Control.Monad                  (forever)
 import Data.Binary                    (encode, decode)
 import Network.Socket          hiding (recv, sendAll)
@@ -13,7 +13,7 @@ import System.Environment             (getArgs)
 import System.Exit                    (exitFailure)
 
 import Graphics (startGame)
-import Board    (Board)
+import Board    (Board, activePlayerId)
 
 main :: IO ()
 main = withSocketsDo $ do
@@ -41,11 +41,17 @@ open name addr = do
   sendAll sock $ encode name
   return sock
 
+handleException :: Either SomeException () -> IO ()
+handleException (Left exception) = do
+                                     putStrLn "Exception while receiving board"
+                                     putStrLn $ show exception
+handleException _                = putStrLn "Game finisghed"
+
 runClient :: Socket -> IO ()
 runClient sock = do
   board    <- recvBoard sock
   recvMVar <- newMVar board
-  forkIO $ recvLoop recvMVar sock
+  flip forkFinally handleException $ recvLoop recvMVar sock
   startGame (sock, board) recvMVar
 
 recvLoop :: MVar Board -> Socket -> IO ()

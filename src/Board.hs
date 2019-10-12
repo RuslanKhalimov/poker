@@ -65,6 +65,7 @@ data Board = Board
   , visibleOnBoardCards :: Hand
   , players             :: Players
   , playersCount        :: Int
+  , fixedPlayersCount   :: Int
   , activePlayerId      :: Int
   , needAction          :: Bool
   , needAnyKey          :: Bool

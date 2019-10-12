@@ -59,7 +59,7 @@ createBoard smallBlindId cnt = do
 
 nextDeal :: Integer -> Int -> Bool -> Board -> Board
 nextDeal time smallBlindId isFirstTime board =
-  let cnt                     = playersCount board
+  let cnt                     = fixedPlayersCount board
       gen                     = mkStdGen $ fromInteger time
       (money, names)          = if isFirstTime
                                 then
@@ -70,12 +70,15 @@ nextDeal time smallBlindId isFirstTime board =
                                   )
       deck                    = map toEnum $ shuffle' [0..51] 52 gen
       (onBoard, playersCards) = dealCards cnt deck []
-      createdPlayers          = createPlayers smallBlindId cnt (map (map Card) playersCards) money names
+      createdPlayers          = Map.filterWithKey (\_id _ -> isFirstTime || Map.member _id (players board))
+                              $ createPlayers smallBlindId cnt (map (map Card) playersCards) money names
   in
     board { onBoardCards        = map Card onBoard
           , visibleOnBoardCards = PreFlop
           , players             = createdPlayers
-          , activePlayerId      = nextPlayerId cnt . nextPlayerId cnt $ smallBlindId
+          , activePlayerId      = nextPlayerId (fixedPlayersCount board)
+                                . nextPlayerId (fixedPlayersCount board)
+                                $ smallBlindId
           , currentBet          = 0
           , stepsInRound        = 0
           , banks               = [Bank (Set.fromList [0..cnt - 1]) 0]
@@ -86,6 +89,7 @@ createBoardUsingGen time smallBlindId cnt =
   nextDeal time smallBlindId True $ Board { onBoardCards        = []
                                           , visibleOnBoardCards = PreFlop
                                           , playersCount        = cnt
+                                          , fixedPlayersCount   = cnt
                                           , activePlayerId      = -1
                                           , needAction          = True
                                           , needAnyKey          = False
@@ -172,16 +176,18 @@ getMaxBet :: Board -> Int
 getMaxBet = maximum . Map.map playerBet . players
 
 getNextPlayerId :: Board -> Int
-getNextPlayerId board = getNextId (nextPlayerId (playersCount board) (activePlayerId board)) board
+getNextPlayerId board = getNextId (nextPlayerId (fixedPlayersCount board) (activePlayerId board)) board
 
 getNextId :: Int -> Board -> Int
 getNextId _id board =
   if visibleOnBoardCards board == Showdown
-     || isInGame (players board Map.! _id) && playerMoney (players board Map.! _id) > 0
+     || Map.member _id (players board)
+     && isInGame (players board Map.! _id)
+     && playerMoney (players board Map.! _id) > 0
   then
     _id
   else
-    getNextId (nextPlayerId (playersCount board) _id) board
+    getNextId (nextPlayerId (fixedPlayersCount board) _id) board
 
 nextPlayerId :: Int -> Int -> Int
 nextPlayerId playersCnt _id = if playersCnt == 4
@@ -217,7 +223,13 @@ fillBanks board =
 
 mergeBoards :: Board -> Board -> Board
 mergeBoards board oldBoard = oldBoard { stepsInRound = stepsInRound board
-                                      , players      = Map.insert _id (players board Map.! _id) (players oldBoard)
+                                      , players      = newPlayers
+                                      , playersCount = Map.size newPlayers
                                       }
   where
     _id = activePlayerId board
+    newPlayers = if Map.member _id (players board)
+                 then
+                   Map.insert _id (players board Map.! _id) (players oldBoard)
+                 else
+                   Map.delete _id (players oldBoard)
