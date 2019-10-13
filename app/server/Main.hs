@@ -18,7 +18,6 @@ import           System.Time                    (ClockTime(TOD), getClockTime)
 
 import           Board        (Board (..), Hand(Showdown), Player (..))
 import qualified BoardUtils as BU
-import           CardUtils    (handValueFromCardSet)
 import           PlayerAction (PlayerAction (..), bet, check, foldCards, quit)
 
 type Connections = Map.Map Int Socket
@@ -33,7 +32,7 @@ main = withSocketsDo $ do
                                                                  putStrLn "Excpected <port> <playersCount>"
                                                                  exitFailure
 
-  initialBoard <- BU.createBoard 0 playersCount
+  initialBoard <- BU.createBoard playersCount
 
   addr <- resolve port
   bracket (open addr playersCount) close (runServer initialBoard)
@@ -71,7 +70,7 @@ runServer board sock = do
   let names       = map fst playersInfo
   let newBoard    = board { players = Map.map (\p -> p { playerName = names !! playerId p }) (players board) }
   clientMVars    <- fmap Map.fromList
-                  . fmap (zip [0..playersCount board - 1])
+                  . fmap (zip [0..])
                   . mapM (newMVar . (True,))
                   $ replicate (playersCount newBoard) newBoard
   mapM_ (flip forkFinally handleException . (_talkWithClient clientMVars)) connections
@@ -120,7 +119,9 @@ gameLoop firstPlayerId connections clientMVars board = do
       let finalBoard = newBoard { visibleOnBoardCards = succ $ visibleOnBoardCards newBoard
                                 , stepsInRound        = 0
                                 , banks               = banks $ BU.fillBanks newBoard
-                                , activePlayerId      = firstPlayerId
+                                , activePlayerId      = BU.getNextId newBoard
+                                                      . BU.getNextId newBoard
+                                                      $ firstPlayerId
                                 , players             = Map.map (\p -> p { playerBet = 0 }) (players newBoard)
                                 }
       gameLoop firstPlayerId newConnections clientMVars finalBoard
@@ -148,10 +149,8 @@ recvAction sock = do
 
 finishRound :: Int -> Connections -> Map.Map Int SharedInfo -> Board -> IO Board
 finishRound firstPlayerId connections clientMVars board = do
-  let cardSets   = BU.getCardSets board
-  let handValues = Map.map handValueFromCardSet cardSets
   let finalBoard = BU.kickPlayers
-                 . BU.giveMoney handValues
+                 . BU.giveMoney
                  $ board { banks               = banks $ BU.fillBanks board
                          , visibleOnBoardCards = Showdown
                          , activePlayerId      = -1
