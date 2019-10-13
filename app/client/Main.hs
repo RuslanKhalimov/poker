@@ -42,10 +42,8 @@ open name addr = do
   return sock
 
 handleException :: Either SomeException () -> IO ()
-handleException (Left exception) = do
-                                     putStrLn "Exception while receiving board"
-                                     putStrLn $ show exception
-handleException _                = putStrLn "Game finisghed"
+handleException (Left exception) = putStrLn $ "Exception while receiving board: " ++ show exception
+handleException _                = putStrLn "Game finished"
 
 runClient :: Socket -> IO ()
 runClient sock = do

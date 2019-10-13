@@ -61,9 +61,7 @@ talkWithClient boardMVar connection = do
   talkWithClient boardMVar connection
 
 handleException :: Either SomeException () -> IO ()
-handleException (Left exception) = do
-                                     putStrLn "Exception while sending board"
-                                     putStrLn $ show exception
+handleException (Left exception) = putStrLn $ "Exception while sending board : " ++ show exception
 handleException _                = putStrLn "Game finished"
 
 runServer :: Board -> Socket -> IO ()
@@ -115,19 +113,20 @@ gameLoop firstPlayerId connections clientMVars board = do
     then
       finishGame newConnections clientMVars finalBoard
     else
-      gameLoop (BU.getNextId firstPlayerId finalBoard) newConnections clientMVars finalBoard
+      gameLoop (BU.getNextId finalBoard firstPlayerId) newConnections clientMVars finalBoard
   else
     if stepsInRound newBoard == Map.size (Map.filter isInGame $ players newBoard)
     then do
       let finalBoard = newBoard { visibleOnBoardCards = succ $ visibleOnBoardCards newBoard
                                 , stepsInRound        = 0
                                 , banks               = banks $ BU.fillBanks newBoard
-                                , activePlayerId      = BU.getNextId firstPlayerId newBoard
+                                , activePlayerId      = firstPlayerId
                                 , players             = Map.map (\p -> p { playerBet = 0 }) (players newBoard)
                                 }
       gameLoop firstPlayerId newConnections clientMVars finalBoard
     else do
-      gameLoop firstPlayerId newConnections clientMVars newBoard { activePlayerId = BU.getNextPlayerId newBoard }
+      gameLoop firstPlayerId newConnections clientMVars
+      $ newBoard { activePlayerId = BU.getNextId newBoard (activePlayerId newBoard) }
 
 sendBoard :: Bool -> Board -> (Int, Socket) -> IO ()
 sendBoard needHide board (_id, sock) = sendAll sock
@@ -142,16 +141,17 @@ recvAction sock = do
   message <- try $ recv sock 512
   case message of
     Left (exception :: IOException) -> do
-                                         putStrLn "Exception while receiving action"
-                                         putStrLn $ show exception
+                                         putStrLn $ "Exception while receiving action from "
+                                                 ++ show sock ++ ": " ++ show exception
                                          return Quit
-    Right action   -> return $ decode action
+    Right action                    -> return $ decode action
 
 finishRound :: Int -> Connections -> Map.Map Int SharedInfo -> Board -> IO Board
 finishRound firstPlayerId connections clientMVars board = do
   let cardSets   = BU.getCardSets board
   let handValues = Map.map handValueFromCardSet cardSets
-  let finalBoard = BU.giveMoney handValues
+  let finalBoard = BU.kickPlayers
+                 . BU.giveMoney handValues
                  $ board { banks               = banks $ BU.fillBanks board
                          , visibleOnBoardCards = Showdown
                          , activePlayerId      = -1
@@ -162,7 +162,7 @@ finishRound firstPlayerId connections clientMVars board = do
   mapM_ recvAction connections
 
   (TOD time _) <- getClockTime
-  return $ BU.nextDeal time (BU.getNextId firstPlayerId board) False (BU.kickPlayers finalBoard)
+  return $ BU.nextDeal time (BU.getNextId finalBoard firstPlayerId) False finalBoard
 
 finishGame :: Connections -> Map.Map Int SharedInfo -> Board -> IO ()
 finishGame connections clientMVars board = do

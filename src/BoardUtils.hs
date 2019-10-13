@@ -1,5 +1,6 @@
 module BoardUtils
-  ( createBoard
+  ( addBet
+  , createBoard
   , createBoardUsingGen
   , fillBanks
   , getCardSets
@@ -7,7 +8,6 @@ module BoardUtils
   , getMaxBet
   , giveMoney
   , getNextId
-  , getNextPlayerId
   , hideCards
   , isGameFinished
   , isRoundFinished
@@ -63,26 +63,42 @@ nextDeal time smallBlindId isFirstTime board =
       gen                     = mkStdGen $ fromInteger time
       (money, names)          = if isFirstTime
                                 then
-                                  (replicate cnt initialMoney, replicate cnt "")
+                                  ( Map.fromList . zip [0..cnt - 1] $ replicate cnt initialMoney
+                                  , Map.fromList . zip [0..cnt - 1] $ replicate cnt ""
+                                  )
                                 else
-                                  ( map snd . Map.toList . (Map.map playerMoney) . players $ board
-                                  , map snd . Map.toList . (Map.map playerName ) . players $ board
+                                  ( Map.map playerMoney $ players board
+                                  , Map.map playerName  $ players board
                                   )
       deck                    = map toEnum $ shuffle' [0..51] 52 gen
       (onBoard, playersCards) = dealCards cnt deck []
       createdPlayers          = Map.filterWithKey (\_id _ -> isFirstTime || Map.member _id (players board))
-                              $ createPlayers smallBlindId cnt (map (map Card) playersCards) money names
+                              $ createPlayers (map (map Card) playersCards) money names
   in
-    board { onBoardCards        = map Card onBoard
-          , visibleOnBoardCards = PreFlop
-          , players             = createdPlayers
-          , activePlayerId      = nextPlayerId (fixedPlayersCount board)
-                                . nextPlayerId (fixedPlayersCount board)
-                                $ smallBlindId
-          , currentBet          = 0
-          , stepsInRound        = 0
-          , banks               = [Bank (Set.fromList [0..cnt - 1]) 0]
-          }
+    setBlinds smallBlindId $ board { onBoardCards        = map Card onBoard
+                                   , visibleOnBoardCards = PreFlop
+                                   , players             = createdPlayers
+                                   , playersCount        = Map.size createdPlayers
+                                   , currentBet          = 0
+                                   , stepsInRound        = 0
+                                   , banks               = [Bank (Map.keysSet createdPlayers) 0]
+                                   }
+
+addBet :: Int -> Player -> Player
+addBet x player = player { playerBet   = playerBet player + x
+                         , playerMoney = playerMoney player - x
+                         }
+
+setBlinds :: Int -> Board -> Board
+setBlinds smallBlindId board = board { activePlayerId = getNextId board . getNextId board $ smallBlindId
+                                     , players        = updatePlayers $ players board
+                                     }
+  where
+    bigBlindId = getNextId board smallBlindId
+
+    updatePlayers :: Players -> Players
+    updatePlayers = Map.adjust (addBet smallBlind) smallBlindId
+                  . Map.adjust (addBet bigBlind)   bigBlindId
 
 createBoardUsingGen :: Integer -> Int -> Int -> Board
 createBoardUsingGen time smallBlindId cnt =
@@ -100,23 +116,18 @@ createBoardUsingGen time smallBlindId cnt =
                                           , players             = Map.empty
                                           }
 
-createPlayers :: Int -> Int -> [[Card]] -> [Int] -> [String] -> Players
-createPlayers smallBlindId cnt cards money names  = Map.fromList
-                                                  . map (createPlayerEntry smallBlindId cnt)
-                                                  $ zip4 [0..(cnt - 1)] cards money names
+createPlayers :: [[Card]] -> Map.Map Int Int -> Map.Map Int String -> Players
+createPlayers cards money names = Map.fromList
+                                . map createPlayerEntry
+                                $ zip4 (Set.toList $ Map.keysSet names) cards (Map.elems money) (Map.elems names)
 
-createPlayerEntry :: Int -> Int -> (Int, [Card], Int, String) -> (Int, Player)
-createPlayerEntry smallBlindId cnt (_id, cards, money, name) =
+createPlayerEntry :: (Int, [Card], Int, String) -> (Int, Player)
+createPlayerEntry (_id, cards, money, name) =
   let
-    initialBet = if smallBlindId == _id
-                 then smallBlind
-                 else if nextPlayerId cnt smallBlindId == _id
-                 then bigBlind
-                 else 0
     player = Player { playerId    = _id
-                    , playerBet   = initialBet
+                    , playerBet   = 0
                     , playerCards = cards
-                    , playerMoney = money - initialBet
+                    , playerMoney = money
                     , playerName  = name
                     , isInGame    = True
                     }
@@ -139,7 +150,7 @@ isRoundFinished board = visibleOnBoardCards board == River
                      && all (\p -> playerBet p == getMaxBet board || playerMoney p == 0) (players board)
 
 isGameFinished :: Board -> Bool
-isGameFinished board = 1 == (Map.size $ Map.filter ((> 0) . playerMoney) (players board))
+isGameFinished board = 1 == playersCount board
 
 kickPlayers :: Board -> Board
 kickPlayers board = board { playersCount = Map.size newPlayers
@@ -175,29 +186,30 @@ getCardSets board = Map.map (map (\(Card cv) -> cv) . (onBoardCards board ++) . 
 getMaxBet :: Board -> Int
 getMaxBet = maximum . Map.map playerBet . players
 
-getNextPlayerId :: Board -> Int
-getNextPlayerId board = getNextId (nextPlayerId (fixedPlayersCount board) (activePlayerId board)) board
+getNextId :: Board -> Int -> Int
+getNextId board _id = _getNextId board (nextPlayerId (fixedPlayersCount board) _id)
+  where
+    _getNextId :: Board -> Int -> Int
+    _getNextId board _id =
+      if visibleOnBoardCards board == Showdown
+         || Map.member _id (players board)
+         && isInGame (players board Map.! _id)
+         && playerMoney (players board Map.! _id) > 0
+      then
+        _id
+      else
+        _getNextId board $ nextPlayerId (fixedPlayersCount board) _id
 
-getNextId :: Int -> Board -> Int
-getNextId _id board =
-  if visibleOnBoardCards board == Showdown
-     || Map.member _id (players board)
-     && isInGame (players board Map.! _id)
-     && playerMoney (players board Map.! _id) > 0
-  then
-    _id
-  else
-    getNextId (nextPlayerId (fixedPlayersCount board) _id) board
+    nextPlayerId :: Int -> Int -> Int
+    nextPlayerId playersCnt _id = if playersCnt == 4
+                                  then case _id of
+                                    0 -> 3
+                                    1 -> 2
+                                    2 -> 0
+                                    3 -> 1
+                                  else
+                                    ((_id + 1) `mod` playersCnt)
 
-nextPlayerId :: Int -> Int -> Int
-nextPlayerId playersCnt _id = if playersCnt == 4
-                              then case _id of
-                                0 -> 3
-                                1 -> 2
-                                2 -> 0
-                                3 -> 1
-                              else
-                                ((_id + 1) `mod` playersCnt)
 fillBanks :: Board -> Board
 fillBanks board =
   let
