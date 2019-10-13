@@ -13,7 +13,7 @@ import qualified Data.Map as Map
 import           GHC.Generics (Generic)
 
 import Board      (Board (..), Player (..))
-import BoardUtils (getFromActivePlayer, getMaxBet, modifyActivePlayer)
+import BoardUtils (addBet, getFromActivePlayer, getMaxBet, modifyActivePlayer)
 
 data PlayerAction = Fold
                   | Bet Int
@@ -30,9 +30,8 @@ makeBet board = modifyActivePlayer mapper $ board { needAction   = False
                                                   , stepsInRound = stepsInRound board + 1
                                                   }
   where
-    mapper player = player { playerBet   = playerBet player + min (currentBet board) (playerMoney player)
-                           , playerMoney = max 0 (playerMoney player - currentBet board)
-                           }
+    mapper :: Player -> Player
+    mapper p = addBet (currentBet board `min` playerMoney p) p
 
 foldCards :: Board -> Board
 foldCards board = makeBet $ modifyActivePlayer mapper board { currentBet   = 0
@@ -50,7 +49,7 @@ bet count board = makeBet board { currentBet   = _currentBet
                                                    stepsInRound board
                                 }
   where
-    _currentBet = max count (getMaxBet board - getFromActivePlayer playerBet board)
+    _currentBet = count `max` getMaxBet board - getFromActivePlayer playerBet board
 
 check :: Board -> Board
 check board = bet 0 board

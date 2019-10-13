@@ -3,7 +3,7 @@ import Test.Hspec
 import qualified Data.Map as Map
 
 import Board        (Board(..), Player(..))
-import BoardUtils   (createBoardUsingGen, getFromActivePlayer, modifyActivePlayer, modifyPlayer)
+import BoardUtils   (addBet, createBoardUsingGen, getFromActivePlayer, modifyActivePlayer, modifyPlayer)
 import PlayerAction (check, bet, foldCards)
 
 defaultBoard :: Board
@@ -14,11 +14,6 @@ defaultBoard = check . check
 
 boardWithGreaterBet :: Board
 boardWithGreaterBet = modifyPlayer 1 (addBet 200) defaultBoard
-
-addBet :: Int -> Player -> Player
-addBet x player = player { playerBet   = playerBet player + x
-                         , playerMoney = playerMoney player - x
-                         }
 
 leaveGame :: Player -> Player
 leaveGame player = player { isInGame = False }
