@@ -149,12 +149,20 @@ recvAction sock = do
 
 finishRound :: Int -> Connections -> Map.Map Int SharedInfo -> Board -> IO Board
 finishRound firstPlayerId connections clientMVars board = do
+  let handValues = BU.getHandValues board
   let finalBoard = BU.kickPlayers
                  . BU.giveMoney
                  $ board { banks               = banks $ BU.fillBanks board
                          , visibleOnBoardCards = Showdown
                          , activePlayerId      = -1
-                         , players             = Map.map (\p -> p { playerBet = 0 }) (players board)
+                         , players             = Map.map (\p -> p { playerBet       = 0
+                                                                  , playerHandValue = if isInGame p
+                                                                                      then
+                                                                                        Just $ handValues Map.! playerId p
+                                                                                      else Nothing
+                                                                  }
+                                                         )
+                                               $ players board
                          }
 
   shareBoard False connections clientMVars finalBoard

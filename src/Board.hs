@@ -14,15 +14,16 @@ import Data.Set       (Set)
 import GHC.Generics   (Generic)
 import Graphics.Gloss (Picture)
 
-import Card (Card)
+import Card (Card, HandValue)
 
 data Player = Player
-  { playerId    :: Int
-  , playerBet   :: Int
-  , playerCards :: [Card]
-  , playerMoney :: Int
-  , playerName  :: String
-  , isInGame    :: Bool
+  { playerId        :: Int
+  , playerBet       :: Int
+  , playerCards     :: [Card]
+  , playerHandValue :: Maybe HandValue
+  , playerMoney     :: Int
+  , playerName      :: String
+  , isInGame        :: Bool
   } deriving (Eq, Generic, Show)
 
 instance Binary Player where

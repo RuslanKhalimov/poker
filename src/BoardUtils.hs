@@ -4,6 +4,7 @@ module BoardUtils
   , createBoardUsingGen
   , fillBanks
   , getFromActivePlayer
+  , getHandValues
   , getMaxBet
   , giveMoney
   , getNextId
@@ -124,12 +125,13 @@ createPlayers cards money names = Map.fromList
 createPlayerEntry :: (Int, [Card], Int, String) -> (Int, Player)
 createPlayerEntry (_id, cards, money, name) = (_id, player)
   where
-    player = Player { playerId    = _id
-                    , playerBet   = 0
-                    , playerCards = cards
-                    , playerMoney = money
-                    , playerName  = name
-                    , isInGame    = True
+    player = Player { playerId        = _id
+                    , playerBet       = 0
+                    , playerCards     = cards
+                    , playerMoney     = money
+                    , playerName      = name
+                    , isInGame        = True
+                    , playerHandValue = Nothing
                     }
 
 getFromActivePlayer :: (Player -> a) -> Board -> a
@@ -158,6 +160,12 @@ kickPlayers board = board { playersCount = Map.size newPlayers
   where
     newPlayers = Map.filter ((> 0) . playerMoney) (players board)
 
+getHandValues :: Board -> Map.Map Int HandValue
+getHandValues board = Map.map handValueFromCardSet
+                    . Map.map (map (\(Card cv) -> cv) . (onBoardCards board ++) . playerCards)
+                    . Map.filter isInGame
+                    $ (players board)
+
 giveMoney :: Board -> Board
 giveMoney board = _giveMoney (banks board) board { banks = [initialBank] }
   where
@@ -166,13 +174,8 @@ giveMoney board = _giveMoney (banks board) board { banks = [initialBank] }
                        , participants = Map.keysSet $ players board
                        }
 
-    cardSets :: Map.Map Int [CardValue]
-    cardSets = Map.map (map (\(Card cv) -> cv) . (onBoardCards board ++) . playerCards)
-             . Map.filter isInGame
-             $ (players board)
-
     handValues :: Map.Map Int HandValue
-    handValues = Map.map handValueFromCardSet cardSets
+    handValues = getHandValues board
 
     _giveMoney :: [Bank] -> Board -> Board
     _giveMoney []        board = board

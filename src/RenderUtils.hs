@@ -48,13 +48,20 @@ renderComponent :: Float -> Float -> [Gloss.Picture] -> Gloss.Picture
 renderComponent x y components = Gloss.translate x y . Gloss.pictures $ components
 
 renderInt :: Gloss.Color -> Float -> Float -> Int -> Gloss.Picture
-renderInt color x y = renderString color x y . show
+renderInt color x y = renderStringCenter color x y . show
 
 renderString :: Gloss.Color -> Float -> Float -> String -> Gloss.Picture
-renderString color x y = Gloss.translate x y
-                       . Gloss.scale 0.1 0.1
-                       . Gloss.color color
-                       . Gloss.text
+renderString color x y text = Gloss.translate x y
+                            . Gloss.scale 0.1 0.1
+                            . Gloss.color color
+                            . Gloss.text
+                            $ text
+
+renderStringCenter :: Gloss.Color -> Float -> Float -> String -> Gloss.Picture
+renderStringCenter color x y text = renderString color getX y text
+  where
+    getX :: Float
+    getX = x - 3.5 * (fromIntegral $ length text)
 
 renderRectangle :: Gloss.Color -> Float -> Float -> Gloss.Picture
 renderRectangle color width height = Gloss.color color
@@ -143,16 +150,21 @@ renderPlayerInfo :: Player -> Gloss.Picture
 renderPlayerInfo player =
   if isInGame player
   then
-    let
-      [y1, y2, y3] = if playerId player == 1 then [(-30), (-15), 0] else [0, (-20), (-40)]
-    in playerInfoBuilder (playerId player)
-     . Gloss.pictures
-     $ [ renderInt    Gloss.white (-40) y1 $ playerBet   player
-       , renderString Gloss.white (-45) y2 $ "BET"
-       , renderInt    Gloss.white   25  y1 $ playerMoney player
-       , renderString Gloss.white   15  y2 $ "MONEY"
-       , renderString Gloss.white (-10) y3 $ playerName  player
-       ]
+    case playerHandValue player of
+      Nothing ->
+        let
+          [y1, y2, y3] = if playerId player == 1 then [(-30), (-15), 0] else [0, (-20), (-40)]
+        in playerInfoBuilder (playerId player)
+         . Gloss.pictures
+         $ [ renderInt          Gloss.white (-cardWidth / 2) y1 $ playerBet   player
+           , renderStringCenter Gloss.white (-cardWidth / 2) y2 $ "BET"
+           , renderInt          Gloss.white ( cardWidth / 2) y1 $ playerMoney player
+           , renderStringCenter Gloss.white ( cardWidth / 2) y2 $ "MONEY"
+           , renderStringCenter Gloss.white  0               y3 $ playerName  player
+           ]
+      Just handValue -> playerInfoBuilder (playerId player)
+                      . renderStringCenter Gloss.white 0 (-20)
+                      $ show handValue
   else
     Gloss.blank
 
