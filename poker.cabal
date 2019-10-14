@@ -75,7 +75,20 @@ test-suite player-actions
     , poker
     , containers
     , hspec
-    , random
+  default-language:    Haskell2010
+
+test-suite board-utils
+  type:
+      exitcode-stdio-1.0
+  hs-source-dirs:
+      test
+  main-is:
+      BoardUtilsTest.hs
+  build-depends:
+      base >=4.7 && <5
+    , poker
+    , containers
+    , hspec
   default-language:    Haskell2010
 
 executable client

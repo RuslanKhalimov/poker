@@ -159,8 +159,13 @@ kickPlayers board = board { playersCount = Map.size newPlayers
     newPlayers = Map.filter ((> 0) . playerMoney) (players board)
 
 giveMoney :: Board -> Board
-giveMoney board = _giveMoney (banks board) board
+giveMoney board = _giveMoney (banks board) board { banks = [initialBank] }
   where
+    initialBank :: Bank
+    initialBank = Bank { money        = 0
+                       , participants = Map.keysSet $ players board
+                       }
+
     cardSets :: Map.Map Int [CardValue]
     cardSets = Map.map (map (\(Card cv) -> cv) . (onBoardCards board ++) . playerCards)
              . Map.filter isInGame
@@ -182,7 +187,7 @@ giveMoney board = _giveMoney (banks board) board
       in
         if Map.member (playerId player) winPlayers
         then
-          player { playerMoney = playerMoney player + money bank `div` Map.size winPlayers }
+          player { playerMoney = playerMoney player + (money bank `div` Map.size winPlayers) }
         else
           player
 
@@ -220,24 +225,26 @@ fillBanks :: Board -> Board
 fillBanks board =
   let
     bank:bs       = banks board
-    playerBets    = Map.map playerBet . Map.filter isInGame . players $ board
-    minBet        = minimum playerBets
-    newBank       = bank { money = money bank + (sum . Map.map playerBet . players $ board) }
-    newPlayerBets = Map.map (`subtract` minBet) playerBets
+    playerBets    = Map.map playerBet $ players board
+    nonZeroBets   = Map.filter (> 0) . Map.map playerBet . Map.filter isInGame $ players board
+    minBet        = if Map.null nonZeroBets then 0 else minimum nonZeroBets
+    forEqualBank  = bank { money = money bank + (sum . Map.map playerBet . players $ board) }
+    newBank       = bank { money = money bank + (sum . Map.map (min minBet . playerBet) . players $ board) }
+    newPlayerBets = Map.map (max 0 . (minBet `subtract`)) playerBets
     newPlayers    = Map.map (\p -> p { playerBet = newPlayerBets Map.! playerId p } ) (players board)
   in
-    if all (== minBet) playerBets
+    if Map.null nonZeroBets || all (== minBet) nonZeroBets
     then
-      board { banks   = newBank:bs
+      board { banks   = forEqualBank:bs
             , players = newPlayers
             }
     else
-      board { banks   = (Bank { money = sum . Map.map playerBet . players $ board
-                              , participants = Map.keysSet $ Map.filter ((> 0) . playerBet) newPlayers
-                              }
-                        ) : bank : bs
-            , players = newPlayers
-            }
+      fillBanks board { banks   = (Bank { money        = 0
+                                        , participants = Map.keysSet $ Map.filter ((> 0) . playerBet) newPlayers
+                                        }
+                                  ) : newBank : bs
+                      , players = newPlayers
+                      }
 
 mergeBoards :: Board -> Board -> Board
 mergeBoards board oldBoard = oldBoard { stepsInRound = stepsInRound board
