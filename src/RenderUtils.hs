@@ -11,14 +11,18 @@
   , screenSize
   ) where
 
+import           Control.Lens   ((^.))
 import qualified Data.Map       as Map
 import           Data.Foldable  (fold)
 import qualified Graphics.Gloss as Gloss
 import           Network.Socket (Socket)
 
-import Board     (Bank (..), Board (..), Player (..), Players)
-import Card      (Card)
-import CardUtils (fileNameFromCard)
+import Board      ( Bank, Board, Player, Players, activePlayerId, banks, bankMoney, currentBet, isInGame, onBoardCards
+                  , needAction, needAnyKey, playerBet, playerCards, playerHandValue, playerId, playerMoney, playerName
+                  , players, timer)
+import BoardUtils (getFromActivePlayer)
+import Card       (Card)
+import CardUtils  (fileNameFromCard)
 
 type Images = Map.Map String Gloss.Picture
 
@@ -76,9 +80,9 @@ renderWorld images (_, board) = pure (renderBoard images board)
 renderControlPanel :: Images -> Board -> Gloss.Picture
 renderControlPanel images board =
   let controlPanelPicture = renderRectangle controlPanelColor controlPanelWidth controlPanelHeight
-      currentBetPicture   = renderInt Gloss.black 0 0 . currentBet $ board
+      currentBetPicture   = renderInt Gloss.black 0 0 $ board^.currentBet
       messagePicture      = renderMessage board
-      timerPicture        = renderInt Gloss.black (-deskWidth / 2 + 20) 0 . round . timer $ board
+      timerPicture        = renderInt Gloss.black (-deskWidth / 2 + 20) 0 . round $ board^.timer
       betButtonPicture    = Gloss.translate betButtonX   0 $ images Map.! "bet"
       checkButtonPicture  = Gloss.translate checkButtonX 0 $ images Map.! "check"
       foldButtonPicture   = Gloss.translate foldButtonX  0 $ images Map.! "fold"
@@ -93,10 +97,10 @@ renderControlPanel images board =
 
 renderBoard ::Images -> Board -> Gloss.Picture
 renderBoard images board =
-  let banksPicture        = renderBanks (banks board)
+  let banksPicture        = renderBanks $ board^.banks
       deskPicture         = renderRectangle deskColor deskWidth deskHeight
-      onBoardCardsPicture = renderOnBoardCards images (onBoardCards board)
-      playersPicture      = renderPlayers images (players board)
+      onBoardCardsPicture = renderOnBoardCards images $ board^.onBoardCards
+      playersPicture      = renderPlayers images $ board^.players
       selectingPicture    = renderSelectingRect board
   in renderComponent 0 (controlPanelHeight / 2) [ deskPicture
                                                 , banksPicture
@@ -106,14 +110,14 @@ renderBoard images board =
                                                 ]
 
 renderBanks :: [Bank] -> Gloss.Picture
-renderBanks = Gloss.pictures . zipWith ($) banksBuilder . map money
+renderBanks = Gloss.pictures . zipWith ($) banksBuilder . map (^.bankMoney)
 
 renderMessage :: Board -> Gloss.Picture
 renderMessage board
-  | needAction board           = getMessagePicture "YOUR TURN"
-  | needAnyKey board           = getMessagePicture "PRESS ANY KEY"
-  | activePlayerId board == -1 = getMessagePicture "WAITING FOR OTHERS"
-  | otherwise                  = getMessagePicture $ "WAITING FOR " ++ playerName (players board Map.! activePlayerId board)
+  | board^.needAction           = getMessagePicture "YOUR TURN"
+  | board^.needAnyKey           = getMessagePicture "PRESS ANY KEY"
+  | board^.activePlayerId == -1 = getMessagePicture "WAITING FOR OTHERS"
+  | otherwise                   = getMessagePicture $ "WAITING FOR " ++ getFromActivePlayer (^.playerName) board
     where
       getMessagePicture :: String -> Gloss.Picture
       getMessagePicture message = renderString Gloss.black (-deskWidth / 2 + 50) 0 message
@@ -131,16 +135,16 @@ renderPlayers images players = Gloss.pictures
 
 
 renderSelectingRect :: Board -> Gloss.Picture
-renderSelectingRect board = playerCardsBuilder (activePlayerId board)
+renderSelectingRect board = playerCardsBuilder (board^.activePlayerId)
                           $ renderRectangle (Gloss.light deskColor) (2*cardWidth) cardHeight
 
 renderCards :: Images -> Player -> Gloss.Picture
 renderCards images player =
-  if isInGame player
-  then let [firstCard, secondCard] = playerCards player
+  if player^.isInGame
+  then let [firstCard, secondCard] = player^.playerCards
            firstCardPicture        = Gloss.translate (-cardWidth / 2) 0 $ images Map.! fileNameFromCard firstCard
            secondCardPicture       = Gloss.translate ( cardWidth / 2) 0 $ images Map.! fileNameFromCard secondCard
-       in playerCardsBuilder (playerId player)
+       in playerCardsBuilder (player^.playerId)
         . Gloss.pictures
         $ [firstCardPicture, secondCardPicture]
   else
@@ -148,21 +152,21 @@ renderCards images player =
 
 renderPlayerInfo :: Player -> Gloss.Picture
 renderPlayerInfo player =
-  if isInGame player
+  if player^.isInGame
   then
-    case playerHandValue player of
+    case player^.playerHandValue of
       Nothing ->
         let
-          [y1, y2, y3] = if playerId player == 1 then [(-30), (-15), 0] else [0, (-20), (-40)]
-        in playerInfoBuilder (playerId player)
+          [y1, y2, y3] = if player^.playerId == 1 then [(-30), (-15), 0] else [0, (-20), (-40)]
+        in playerInfoBuilder (player^.playerId)
          . Gloss.pictures
-         $ [ renderInt          Gloss.white (-cardWidth / 2) y1 $ playerBet   player
+         $ [ renderInt          Gloss.white (-cardWidth / 2) y1 $ player^.playerBet
            , renderStringCenter Gloss.white (-cardWidth / 2) y2 $ "BET"
-           , renderInt          Gloss.white ( cardWidth / 2) y1 $ playerMoney player
+           , renderInt          Gloss.white ( cardWidth / 2) y1 $ player^.playerMoney
            , renderStringCenter Gloss.white ( cardWidth / 2) y2 $ "MONEY"
-           , renderStringCenter Gloss.white  0               y3 $ playerName  player
+           , renderStringCenter Gloss.white  0               y3 $ player^.playerName
            ]
-      Just handValue -> playerInfoBuilder (playerId player)
+      Just handValue -> playerInfoBuilder (player^.playerId)
                       . renderStringCenter Gloss.white 0 (-20)
                       $ show handValue
   else

@@ -13,7 +13,7 @@ import System.Environment             (getArgs)
 import System.Exit                    (exitFailure)
 
 import Graphics (startGame)
-import Board    (Board, activePlayerId)
+import Board    (Board)
 
 main :: IO ()
 main = withSocketsDo $ do

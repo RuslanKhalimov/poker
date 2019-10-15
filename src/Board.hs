@@ -1,13 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module Board
-  ( Bank (..)
-  , Board (..)
-  , Hand (..)
-  , Player (..)
-  , Players
-  ) where
+module Board where
 
+import Control.Lens   (makeLenses)
 import Data.Binary    (Binary)
 import Data.Map       (Map)
 import Data.Set       (Set)
@@ -17,13 +13,13 @@ import Graphics.Gloss (Picture)
 import Card (Card, HandValue)
 
 data Player = Player
-  { playerId        :: Int
-  , playerBet       :: Int
-  , playerCards     :: [Card]
-  , playerHandValue :: Maybe HandValue
-  , playerMoney     :: Int
-  , playerName      :: String
-  , isInGame        :: Bool
+  { _playerId        :: Int
+  , _playerBet       :: Int
+  , _playerCards     :: [Card]
+  , _playerHandValue :: Maybe HandValue
+  , _playerMoney     :: Int
+  , _playerName      :: String
+  , _isInGame        :: Bool
   } deriving (Eq, Generic, Show)
 
 instance Binary Player where
@@ -55,25 +51,29 @@ instance Enum Hand where
   succ Showdown = Showdown
 
 data Bank = Bank
-  { participants :: Set Int
-  , money        :: Int
+  { _bankParticipants :: Set Int
+  , _bankMoney        :: Int
   } deriving (Eq, Generic, Show)
 
 instance Binary Bank where
 
 data Board = Board
-  { onBoardCards        :: [Card]
-  , visibleOnBoardCards :: Hand
-  , players             :: Players
-  , playersCount        :: Int
-  , fixedPlayersCount   :: Int
-  , activePlayerId      :: Int
-  , needAction          :: Bool
-  , needAnyKey          :: Bool
-  , currentBet          :: Int
-  , stepsInRound        :: Int
-  , banks               :: [Bank]
-  , timer               :: Float
+  { _onBoardCards        :: [Card]
+  , _visibleOnBoardCards :: Hand
+  , _players             :: Players
+  , _playersCount        :: Int
+  , _fixedPlayersCount   :: Int
+  , _activePlayerId      :: Int
+  , _needAction          :: Bool
+  , _needAnyKey          :: Bool
+  , _currentBet          :: Int
+  , _stepsInRound        :: Int
+  , _banks               :: [Bank]
+  , _timer               :: Float
 } deriving (Eq, Generic, Show)
 
 instance Binary Board where
+
+makeLenses ''Bank
+makeLenses ''Board
+makeLenses ''Player

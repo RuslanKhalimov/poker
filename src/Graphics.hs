@@ -5,6 +5,7 @@ module Graphics
   ) where
 
 import           Control.Concurrent.MVar        (MVar, tryTakeMVar)
+import           Control.Lens                   ((^.), (%~))
 import           Data.Binary                    (encode)
 import qualified Data.Map                         as Map
 import           Data.Maybe                     (fromMaybe)
@@ -13,7 +14,7 @@ import qualified Graphics.Gloss.Interface.IO.Game as Game
 import           Network.Socket                 (Socket)
 import           Network.Socket.ByteString.Lazy (sendAll)
 
-import Board         (Board (..))
+import Board         (Board, needAction, needAnyKey, timer)
 import BoardUtils    (modifyActivePlayer)
 import CardUtils     (fileNameFromCardValue)
 import EventsHandler (handleEvent, waitAnyKey)
@@ -58,10 +59,10 @@ startGame world recvMVar = do
 
 handler :: Game.Event -> World -> IO World
 handler event world@(_, board) =
-  if needAction board
+  if board^.needAction
   then
     handle handleEvent event world
-  else if needAnyKey board
+  else if board^.needAnyKey
   then
     handle waitAnyKey event world
   else
@@ -79,8 +80,8 @@ handle callback event (sock, board) = do
 updater :: MVar Board -> Float -> World -> IO World
 updater recvMVar time (sock, board) = do
   receivedBoard <- tryTakeMVar recvMVar
-  let updatedBoard = fromMaybe (board { timer = timer board - time }) receivedBoard
-  if needAction board && timer board < 0
+  let updatedBoard = fromMaybe (timer %~ (time `subtract`) $ board) receivedBoard
+  if board^.needAction && board^.timer < 0
   then do
     sendAll sock $ encode Fold
     return (sock, updatedBoard)

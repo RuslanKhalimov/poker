@@ -8,11 +8,13 @@ module PlayerAction
   , quit
   ) where
 
+import           Control.Lens ((^.), (.~), (%~))
 import           Data.Binary  (Binary)
 import qualified Data.Map as Map
 import           GHC.Generics (Generic)
 
-import Board      (Board (..), Player (..))
+import Board      ( Board, Player, activePlayerId, currentBet, isInGame, needAction, stepsInRound
+                  , playerBet, playerMoney, players, playersCount)
 import BoardUtils (addBet, getFromActivePlayer, getMaxBet, modifyActivePlayer)
 
 data PlayerAction = Fold
@@ -25,36 +27,38 @@ data PlayerAction = Fold
 instance Binary PlayerAction where
 
 makeBet :: Board -> Board
-makeBet board = modifyActivePlayer mapper $ board { needAction   = False
-                                                  , currentBet   = 0
-                                                  , stepsInRound = stepsInRound board + 1
-                                                  }
+makeBet board = modifyActivePlayer mapper $ needAction   .~ False
+                                          $ currentBet   .~ 0
+                                          $ stepsInRound %~ succ
+                                          $ board
   where
     mapper :: Player -> Player
-    mapper p = addBet (currentBet board `min` playerMoney p) p
+    mapper player = addBet ((board^.currentBet) `min` (player^.playerMoney)) player
 
 foldCards :: Board -> Board
-foldCards board = makeBet $ modifyActivePlayer mapper board { currentBet   = 0
-                                                            , stepsInRound = stepsInRound board - 1
-                                                            }
-  where
-    mapper player = player { isInGame = False }
+foldCards board = makeBet $ modifyActivePlayer (isInGame .~ False)
+                          $ currentBet   .~ 0
+                          $ stepsInRound %~ pred
+                          $ board
 
 bet :: Int -> Board -> Board
-bet count board = makeBet board { currentBet   = _currentBet
-                                , stepsInRound = if _currentBet + getFromActivePlayer playerBet board > getMaxBet board
-                                                 then
-                                                   0
-                                                 else
-                                                   stepsInRound board
-                                }
+bet count board = makeBet $ currentBet   .~ newCurrentBet
+                          $ stepsInRound .~ (if newCurrentBet + activePlayerBet > getMaxBet board
+                                             then
+                                               0
+                                             else
+                                               board^.stepsInRound
+                                            )
+                          $ board
   where
-    _currentBet = count `max` getMaxBet board - getFromActivePlayer playerBet board
+    activePlayerBet, newCurrentBet :: Int
+    activePlayerBet = getFromActivePlayer (^.playerBet) board
+    newCurrentBet   = count `max` (getMaxBet board - activePlayerBet)
 
 check :: Board -> Board
 check board = bet 0 board
 
 quit :: Board -> Board
-quit board = board { players      = Map.delete (activePlayerId board) (players board)
-                   , playersCount = playersCount board - 1
-                   }
+quit board = players      %~ Map.delete (board^.activePlayerId)
+           $ playersCount %~ pred
+           $ board

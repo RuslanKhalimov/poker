@@ -18,6 +18,7 @@ module BoardUtils
   , nextDeal
   ) where
 
+import           Control.Lens          ((^.), (.~), (%~))
 import           Data.List             (zip4)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -25,7 +26,7 @@ import           System.Random         (StdGen, mkStdGen)
 import           System.Random.Shuffle (shuffle')
 import           System.Time           (ClockTime (TOD), getClockTime)
 
-import Board       (Bank (..), Board (..), Hand (..), Player (..), Players)
+import Board
 import Card        (Card (..), CardValue, HandValue)
 import CardUtils   (handValueFromCardSet)
 
@@ -35,18 +36,18 @@ bigBlind     = 2 * smallBlind
 initialMoney = 1000
 
 hideCards :: Hand -> Int -> Board -> Board
-hideCards hand exceptId board = board { onBoardCards = newOnBoardCards
-                                      , players      = newPlayers
-                                      , needAction   = exceptId == activePlayerId board
-                                      }
+hideCards hand exceptId board = onBoardCards .~ newOnBoardCards
+                              $ players      .~ newPlayers
+                              $ needAction   .~ (exceptId == board^.activePlayerId)
+                              $ board
   where
-    newOnBoardCards = take (fromEnum hand) (onBoardCards board) ++ replicate (5 - fromEnum hand) CardBack
-    newPlayers      = Map.map hidePlayer'sCards $ players board
+    newOnBoardCards = take (fromEnum hand) (board^.onBoardCards) ++ replicate (5 - fromEnum hand) CardBack
+    newPlayers      = Map.map hidePlayer'sCards $ board^.players
 
     hidePlayer'sCards :: Player -> Player
     hidePlayer'sCards player
-      | exceptId == playerId player = player
-      | otherwise                   = player { playerCards = [CardBack, CardBack] }
+      | exceptId == player^.playerId = player
+      | otherwise                    = playerCards .~ [CardBack, CardBack] $ player
 
 createBoard :: Int -> IO Board
 createBoard cnt = do
@@ -55,16 +56,16 @@ createBoard cnt = do
 
 nextDeal :: Integer -> Int -> Bool -> Board -> Board
 nextDeal time smallBlindId isFirstTime board = setBlinds smallBlindId
-                                             $ board { onBoardCards        = map Card onBoard
-                                                     , visibleOnBoardCards = PreFlop
-                                                     , players             = createdPlayers
-                                                     , playersCount        = Map.size createdPlayers
-                                                     , currentBet          = 0
-                                                     , stepsInRound        = 0
-                                                     , banks               = [Bank (Map.keysSet createdPlayers) 0]
-                                                     }
+                                             $ onBoardCards        .~ map Card onBoard
+                                             $ visibleOnBoardCards .~ PreFlop
+                                             $ players             .~ createdPlayers
+                                             $ playersCount        .~ Map.size createdPlayers
+                                             $ currentBet          .~ 0
+                                             $ stepsInRound        .~ 0
+                                             $ banks               .~ [Bank (Map.keysSet createdPlayers) 0]
+                                             $ board
   where
-    cnt                     = fixedPlayersCount board
+    cnt                     = board^.fixedPlayersCount
     gen                     = mkStdGen $ fromInteger time
     (money, names)          = if isFirstTime
                               then
@@ -72,12 +73,12 @@ nextDeal time smallBlindId isFirstTime board = setBlinds smallBlindId
                                 , Map.fromList . zip [0..] $ replicate cnt ""
                                 )
                               else
-                                ( Map.map playerMoney $ players board
-                                , Map.map playerName  $ players board
+                                ( Map.map (^.playerMoney) $ board^.players
+                                , Map.map (^.playerName)  $ board^.players
                                 )
     deck                    = map toEnum $ shuffle' [0..51] 52 gen
     (onBoard, playersCards) = dealCards cnt deck []
-    createdPlayers          = Map.filterWithKey (\_id _ -> isFirstTime || Map.member _id (players board))
+    createdPlayers          = Map.filterWithKey (\_id _ -> isFirstTime || Map.member _id (board^.players))
                             $ createPlayers (map (map Card) playersCards) money names
 
     dealCards :: Int -> [CardValue] -> [[CardValue]] -> ([CardValue], [[CardValue]])
@@ -85,36 +86,33 @@ nextDeal time smallBlindId isFirstTime board = setBlinds smallBlindId
     dealCards cnt deck acc = dealCards (cnt - 1) (drop 2 deck) (take 2 deck : acc)
 
 addBet :: Int -> Player -> Player
-addBet x player = player { playerBet   = playerBet player + x
-                         , playerMoney = playerMoney player - x
-                         }
+addBet x player = playerBet   %~ (+x)
+                $ playerMoney %~ (x `subtract`)
+                $ player
 
 setBlinds :: Int -> Board -> Board
-setBlinds smallBlindId board = board { activePlayerId = getNextId board bigBlindId
-                                     , players        = updatePlayers $ players board
-                                     }
+setBlinds smallBlindId board = activePlayerId .~ getNextId board (getNextId board smallBlindId)
+                             $ players        %~ updatePlayers
+                             $ board
   where
-    bigBlindId :: Int
-    bigBlindId = getNextId board smallBlindId
-
     updatePlayers :: Players -> Players
     updatePlayers = Map.adjust (addBet smallBlind) smallBlindId
-                  . Map.adjust (addBet bigBlind)   bigBlindId
+                  . Map.adjust (addBet bigBlind) (getNextId board smallBlindId)
 
 createBoardUsingGen :: Integer -> Int -> Int -> Board
 createBoardUsingGen time smallBlindId cnt = nextDeal time smallBlindId True
-                                          $ Board { onBoardCards        = []
-                                                  , visibleOnBoardCards = PreFlop
-                                                  , playersCount        = cnt
-                                                  , fixedPlayersCount   = cnt
-                                                  , activePlayerId      = -1
-                                                  , needAction          = True
-                                                  , needAnyKey          = False
-                                                  , currentBet          = 0
-                                                  , stepsInRound        = 0
-                                                  , banks               = [Bank (Set.fromList [0..cnt - 1]) 0]
-                                                  , timer               = 30
-                                                  , players             = Map.empty
+                                          $ Board { _onBoardCards        = []
+                                                  , _visibleOnBoardCards = PreFlop
+                                                  , _playersCount        = cnt
+                                                  , _fixedPlayersCount   = cnt
+                                                  , _activePlayerId      = -1
+                                                  , _needAction          = True
+                                                  , _needAnyKey          = False
+                                                  , _currentBet          = 0
+                                                  , _stepsInRound        = 0
+                                                  , _banks               = [Bank (Set.fromList [0..cnt - 1]) 0]
+                                                  , _timer               = 30
+                                                  , _players             = Map.empty
                                                   }
 
 createPlayers :: [[Card]] -> Map.Map Int Int -> Map.Map Int String -> Players
@@ -125,94 +123,93 @@ createPlayers cards money names = Map.fromList
 createPlayerEntry :: (Int, [Card], Int, String) -> (Int, Player)
 createPlayerEntry (_id, cards, money, name) = (_id, player)
   where
-    player = Player { playerId        = _id
-                    , playerBet       = 0
-                    , playerCards     = cards
-                    , playerMoney     = money
-                    , playerName      = name
-                    , isInGame        = True
-                    , playerHandValue = Nothing
+    player = Player { _playerId        = _id
+                    , _playerBet       = 0
+                    , _playerCards     = cards
+                    , _playerMoney     = money
+                    , _playerName      = name
+                    , _isInGame        = True
+                    , _playerHandValue = Nothing
                     }
 
 getFromActivePlayer :: (Player -> a) -> Board -> a
-getFromActivePlayer getter board = getter $ players board Map.! (activePlayerId board)
+getFromActivePlayer getter board = getter $ (board^.players) Map.! (board^.activePlayerId)
 
 modifyPlayer :: Int -> (Player -> Player) -> Board -> Board
-modifyPlayer _id func board = board { players = Map.adjust func _id (players board) }
+modifyPlayer _id func = players %~ Map.adjust func _id
 
 modifyActivePlayer :: (Player -> Player) -> Board -> Board
-modifyActivePlayer func board = modifyPlayer (activePlayerId board) func board
+modifyActivePlayer func board = modifyPlayer (board^.activePlayerId) func board
 
 isRoundFinished :: Board -> Bool
-isRoundFinished board = visibleOnBoardCards board == River
-                     && Map.size (Map.filter isInGame $ players board) == stepsInRound board
-                     || (Map.size $ Map.filter isInGame (players board)) == 1
-                     || (Map.size $ Map.filter ((> 0) . playerMoney) (players board)) < 2
-                     && all (\p -> playerBet p == getMaxBet board || playerMoney p == 0) (players board)
+isRoundFinished board = board^.visibleOnBoardCards == River
+                     && Map.size (Map.filter (^.isInGame) $ board^.players) == board^.stepsInRound
+                     || (Map.size $ Map.filter (^.isInGame) $ board^.players) == 1
+                     || (Map.size $ Map.filter ((> 0) . (^.playerMoney)) $ board^.players) < 2
+                     && all (\p -> p^.playerBet == getMaxBet board || p^.playerMoney == 0) (board^.players)
 
 isGameFinished :: Board -> Bool
-isGameFinished board = 1 == playersCount board
+isGameFinished board = 1 == board^.playersCount
 
 kickPlayers :: Board -> Board
-kickPlayers board = board { playersCount = Map.size newPlayers
-                          , players      = newPlayers
-                          }
+kickPlayers board = playersCount .~ Map.size newPlayers
+                  $ players      .~ newPlayers
+                  $ board
   where
-    newPlayers = Map.filter ((> 0) . playerMoney) (players board)
+    newPlayers = Map.filter ((> 0) . (^.playerMoney)) $ board^.players
 
 getHandValues :: Board -> Map.Map Int HandValue
 getHandValues board = Map.map handValueFromCardSet
-                    . Map.map (map (\(Card cv) -> cv) . (onBoardCards board ++) . playerCards)
-                    . Map.filter isInGame
-                    $ (players board)
+                    . Map.map (map (\(Card cv) -> cv) . ((board^.onBoardCards) ++) . (^.playerCards))
+                    . Map.filter (^.isInGame)
+                    $ board^.players
 
 giveMoney :: Board -> Board
-giveMoney board = _giveMoney (banks board) board { banks = [initialBank] }
+giveMoney board = _giveMoney (board^.banks) $ banks .~ [initialBank] $ board
   where
     initialBank :: Bank
-    initialBank = Bank { money        = 0
-                       , participants = Map.keysSet $ players board
+    initialBank = Bank { _bankMoney        = 0
+                       , _bankParticipants = Map.keysSet $ board^.players
                        }
-
-    handValues :: Map.Map Int HandValue
-    handValues = getHandValues board
 
     _giveMoney :: [Bank] -> Board -> Board
     _giveMoney []        board = board
     _giveMoney (bank:bs) board = _giveMoney bs
-                               $ board { players = Map.map (giveMoneyToPlayer bank) (players board) }
+                               $ players %~ Map.map (giveMoneyToPlayer bank)
+                               $ board
 
     giveMoneyToPlayer :: Bank -> Player -> Player
     giveMoneyToPlayer bank player =
-      let _participants   = Map.filterWithKey (\k _ -> Set.member k (participants bank)) handValues
-          winCombination  = maximum _participants
-          winPlayers      = Map.filter (== winCombination) _participants
+      let handValues      = getHandValues board
+          participants   = Map.filterWithKey (\k _ -> Set.member k $ bank^.bankParticipants) handValues
+          winCombination  = maximum participants
+          winPlayers      = Map.filter (== winCombination) participants
       in
-        if Map.member (playerId player) winPlayers
+        if Map.member (player^.playerId) winPlayers
         then
-          player { playerMoney = playerMoney player + (money bank `div` Map.size winPlayers) }
+          playerMoney %~ (+ (bank^.bankMoney `div` Map.size winPlayers)) $ player
         else
           player
 
 getMaxBet :: Board -> Int
-getMaxBet = maximum . Map.map playerBet . players
+getMaxBet = maximum . Map.map (^.playerBet) . (^.players)
 
 getNextId :: Board -> Int -> Int
 getNextId board _id = _getNextId $ nextPlayerId _id
   where
     _getNextId :: Int -> Int
     _getNextId _id =
-      if visibleOnBoardCards board == Showdown
-         || Map.member _id (players board)
-         && isInGame (players board Map.! _id)
-         && playerMoney (players board Map.! _id) > 0
+      if board^.visibleOnBoardCards == Showdown
+         || Map.member _id (board^.players)
+         && ((board^.players) Map.! _id)^.isInGame
+         && ((board^.players) Map.! _id)^.playerMoney > 0
       then
         _id
       else
         _getNextId $ nextPlayerId _id
 
     playersCnt :: Int
-    playersCnt = fixedPlayersCount board
+    playersCnt = board^.fixedPlayersCount
 
     nextPlayerId :: Int -> Int
     nextPlayerId _id = if playersCnt == 4
@@ -227,40 +224,39 @@ getNextId board _id = _getNextId $ nextPlayerId _id
 fillBanks :: Board -> Board
 fillBanks board =
   let
-    bank:bs       = banks board
-    playerBets    = Map.map playerBet $ players board
-    nonZeroBets   = Map.filter (> 0) . Map.map playerBet . Map.filter isInGame $ players board
+    bank:bs       = board^.banks
+    playerBets    = Map.map (^.playerBet) $ board^.players
+    nonZeroBets   = Map.filter (> 0) . Map.map (^.playerBet) . Map.filter (^.isInGame) $ board^.players
     minBet        = if Map.null nonZeroBets then 0 else minimum nonZeroBets
-    forEqualBank  = bank { money = money bank + (sum . Map.map playerBet . players $ board) }
-    newBank       = bank { money = money bank + (sum . Map.map (min minBet . playerBet) . players $ board) }
+    forEqualBank  = bankMoney %~ (+ (sum . Map.map (^.playerBet) $ board^.players)) $ bank
+    newBank       = bankMoney %~ (+ (sum . Map.map (min minBet . (^.playerBet)) $ board^.players)) $ bank
     newPlayerBets = Map.map (max 0 . (minBet `subtract`)) playerBets
-    newPlayers    = Map.map (\p -> p { playerBet = newPlayerBets Map.! playerId p } ) (players board)
+    newPlayers    = Map.map (\p -> playerBet .~ newPlayerBets Map.! (p^.playerId) $ p) $ board^.players
   in
     if Map.null nonZeroBets || all (== minBet) nonZeroBets
-    then
-      board { banks   = forEqualBank:bs
-            , players = newPlayers
-            }
+    then banks   .~ forEqualBank:bs
+       $ players .~ newPlayers
+       $ board
     else
-      fillBanks board { banks   = (Bank { money        = 0
-                                        , participants = Map.keysSet $ Map.filter ((> 0) . playerBet) newPlayers
-                                        }
-                                  ) : newBank : bs
-                      , players = newPlayers
-                      }
+      fillBanks $ banks   .~ (Bank { _bankMoney        = 0
+                                   , _bankParticipants = Map.keysSet $ Map.filter ((> 0) . (^.playerBet)) newPlayers
+                                   }
+                             ) : newBank : bs
+                $ players .~ newPlayers
+                $ board
 
 mergeBoards :: Board -> Board -> Board
-mergeBoards board oldBoard = oldBoard { stepsInRound = stepsInRound board
-                                      , players      = newPlayers
-                                      , playersCount = Map.size newPlayers
-                                      }
+mergeBoards board oldBoard = stepsInRound .~ board^.stepsInRound
+                           $ players      .~ newPlayers
+                           $ playersCount .~ Map.size newPlayers
+                           $ oldBoard
   where
     _id :: Int
-    _id = activePlayerId board
+    _id = board^.activePlayerId
 
     newPlayers :: Players
-    newPlayers = if Map.member _id (players board)
+    newPlayers = if Map.member _id $ board^.players
                  then
-                   Map.insert _id (players board Map.! _id) (players oldBoard)
+                   Map.insert _id ((board^.players) Map.! _id) $ oldBoard^.players
                  else
-                   Map.delete _id (players oldBoard)
+                   Map.delete _id $ oldBoard^.players

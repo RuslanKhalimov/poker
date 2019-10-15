@@ -3,13 +3,14 @@ module EventsHandler
   , waitAnyKey
   ) where
 
+import           Control.Lens              ((^.), (.~), (%~))
 import           Data.Char                 (isDigit)
 import           Data.Foldable             (maximum)
 import qualified Graphics.Gloss                   as Gloss
 import           Graphics.Gloss.Data.Point (pointInBox)
 import qualified Graphics.Gloss.Interface.IO.Game as Game
 
-import Board        (Board (..), Player (..))
+import Board        (Board, Player, currentBet, needAnyKey)
 import PlayerAction (PlayerAction (..))
 import RenderUtils  (betButtonX, buttonWidth, buttonHeight, checkButtonX, controlPanelY, foldButtonX)
 
@@ -31,14 +32,14 @@ handleEvent (Game.EventKey (Game.MouseButton Game.LeftButton)  Game.Down _ pos) 
 handleEvent _                                                                   board = (board, Nothing)
 
 deleteCurrentBet :: Board -> (Board, Maybe PlayerAction)
-deleteCurrentBet board = (board { currentBet = currentBet board `div` 10 }, Nothing)
+deleteCurrentBet board = (currentBet %~ (`div` 10) $ board, Nothing)
 
 handleCharKey :: Char -> Board -> (Board, Maybe PlayerAction)
 handleCharKey c board
   | c == 'f'  = (board, Just Fold)
-  | c == 'b'  = (board, Just $ Bet (currentBet board) )
+  | c == 'b'  = (board, Just . Bet $ board^.currentBet )
   | c == 'c'  = (board, Just Check)
-  | isDigit c = (board { currentBet = 10 * (currentBet board) + read [c] }, Nothing)
+  | isDigit c = (currentBet %~ (+ read [c]) . (*10) $ board, Nothing)
   | otherwise = (board, Nothing)
 
 handleMouseButton :: Gloss.Point -> Board -> (Board, Maybe PlayerAction)
@@ -55,6 +56,6 @@ getButtonRect xDiff = (p1, p3)
     [p1, p2, p3, p4] = map addToPair $ Game.rectanglePath buttonWidth buttonHeight
 
 waitAnyKey :: Game.Event -> Board -> (Board, Maybe PlayerAction)
-waitAnyKey (Game.EventKey (Game.SpecialKey _) _ _ _) board = (board { needAnyKey = False }, Just Ok)
-waitAnyKey (Game.EventKey (Game.Char       _) _ _ _) board = (board { needAnyKey = False }, Just Ok)
+waitAnyKey (Game.EventKey (Game.SpecialKey _) _ _ _) board = (needAnyKey .~ False $ board, Just Ok)
+waitAnyKey (Game.EventKey (Game.Char       _) _ _ _) board = (needAnyKey .~ False $ board, Just Ok)
 waitAnyKey _                                         board = (board, Nothing)
