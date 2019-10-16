@@ -57,12 +57,20 @@ data Bank = Bank
 
 instance Binary Bank where
 
+data PlayerState = Playing
+                 | Winner
+                 | Loser
+  deriving (Eq, Generic, Show)
+
+instance Binary PlayerState where
+
 data Board = Board
   { _onBoardCards        :: [Card]
   , _visibleOnBoardCards :: Hand
   , _players             :: Players
   , _playersCount        :: Int
   , _fixedPlayersCount   :: Int
+  , _playerState         :: PlayerState
   , _activePlayerId      :: Int
   , _needAction          :: Bool
   , _needAnyKey          :: Bool

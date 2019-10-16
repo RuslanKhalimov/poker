@@ -105,6 +105,7 @@ createBoardUsingGen time smallBlindId cnt = nextDeal time smallBlindId True
                                                   , _visibleOnBoardCards = PreFlop
                                                   , _playersCount        = cnt
                                                   , _fixedPlayersCount   = cnt
+                                                  , _playerState         = Playing
                                                   , _activePlayerId      = -1
                                                   , _needAction          = True
                                                   , _needAnyKey          = False

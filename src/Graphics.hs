@@ -6,6 +6,7 @@ module Graphics
 
 import           Control.Concurrent.MVar        (MVar, tryTakeMVar)
 import           Control.Lens                   ((^.), (%~))
+import           Control.Monad                  (when)
 import           Data.Binary                    (encode)
 import qualified Data.Map                         as Map
 import           Data.Maybe                     (fromMaybe)
@@ -18,7 +19,7 @@ import Board         (Board, needAction, needAnyKey, timer)
 import BoardUtils    (modifyActivePlayer)
 import CardUtils     (fileNameFromCardValue)
 import EventsHandler (handleEvent, waitAnyKey)
-import PlayerAction  (PlayerAction(Fold))
+import PlayerAction  (PlayerAction(Fold, Ok))
 import RenderUtils   ( backgroundColor, betButtonX, buttonHeight, buttonWidth, checkButtonX
                      , controlPanelY, foldButtonX, renderWorld, screenPos, screenSize)
 
@@ -81,9 +82,6 @@ updater :: MVar Board -> Float -> World -> IO World
 updater recvMVar time (sock, board) = do
   receivedBoard <- tryTakeMVar recvMVar
   let updatedBoard = fromMaybe (timer %~ (time `subtract`) $ board) receivedBoard
-  if board^.needAction && board^.timer < 0
-  then do
-    sendAll sock $ encode Fold
-    return (sock, updatedBoard)
-  else
-    return (sock, updatedBoard)
+  when (board^.needAction && board^.timer < 0) $ sendAll sock $ encode Fold
+  when (board^.needAnyKey && board^.timer < 0) $ sendAll sock $ encode Ok
+  return (sock, updatedBoard)

@@ -18,9 +18,10 @@ import           Data.Foldable  (fold)
 import qualified Graphics.Gloss as Gloss
 import           Network.Socket (Socket)
 
-import Board      ( Bank, Board, Hand(Showdown), Player, Players, activePlayerId, banks, bankMoney, bankParticipants
-                  , currentBet, isInGame, onBoardCards, needAction, needAnyKey, playerBet, playerCards
-                  , playerHandValue, playerId, playerMoney, playerName, players, timer, visibleOnBoardCards)
+import Board      ( Bank, Board, Hand(Showdown), Player, Players, PlayerState(..), activePlayerId, banks, bankMoney
+                  , bankParticipants, currentBet, isInGame, onBoardCards, needAction, needAnyKey, playerBet
+                  , playerCards, playerHandValue, playerId, playerMoney, playerName, players, playerState, timer
+                  , visibleOnBoardCards)
 import BoardUtils (getFromActivePlayer)
 import Card       (Card, HandValue)
 import CardUtils  (fileNameFromCard)
@@ -90,7 +91,7 @@ renderControlPanel images board =
   let controlPanelPicture = renderRectangle controlPanelColor controlPanelWidth controlPanelHeight
       currentBetPicture   = renderInt Gloss.black 0 0 $ board^.currentBet
       messagePicture      = renderMessage board
-      timerPicture        = renderInt Gloss.black (-deskWidth / 2 + 20) 0 . round $ board^.timer
+      timerPicture        = renderTimer board
       betButtonPicture    = Gloss.translate betButtonX   0 $ images Map.! "bet"
       checkButtonPicture  = Gloss.translate checkButtonX 0 $ images Map.! "check"
       foldButtonPicture   = Gloss.translate foldButtonX  0 $ images Map.! "fold"
@@ -124,13 +125,22 @@ renderBanks = Gloss.pictures . zipWith ($) banksBuilder . map (^.bankMoney)
 
 renderMessage :: Board -> Gloss.Picture
 renderMessage board
-  | board^.needAction           = getMessagePicture "YOUR TURN"
-  | board^.needAnyKey           = getMessagePicture "PRESS ANY KEY"
-  | board^.activePlayerId == -1 = getMessagePicture "WAITING FOR OTHERS"
-  | otherwise                   = getMessagePicture $ "WAITING FOR " ++ getFromActivePlayer (^.playerName) board
+  | board^.playerState == Loser  = getMessagePicture "YOU LOST ALL YOUR MONEY :("
+  | board^.playerState == Winner = getMessagePicture "YOU ARE WINNER"
+  | board^.needAction            = getMessagePicture "YOUR TURN"
+  | board^.needAnyKey            = getMessagePicture "PRESS ANY KEY"
+  | board^.activePlayerId == -1  = getMessagePicture "WAITING FOR OTHERS"
+  | otherwise                    = getMessagePicture $ "WAITING FOR " ++ getFromActivePlayer (^.playerName) board
     where
       getMessagePicture :: String -> Gloss.Picture
       getMessagePicture message = renderString Gloss.black (-deskWidth / 2 + 50) 0 message
+
+renderTimer :: Board -> Gloss.Picture
+renderTimer board = if board^.playerState == Playing
+                    then
+                      renderInt Gloss.black (-deskWidth / 2 + 20) 0 . round $ board^.timer
+                    else
+                      Gloss.blank
 
 renderOnBoardCards :: Images -> [Card] -> Gloss.Picture
 renderOnBoardCards images cards = Gloss.pictures
