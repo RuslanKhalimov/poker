@@ -144,10 +144,13 @@ modifyActivePlayer func board = modifyPlayer (board^.activePlayerId) func board
 
 isRoundFinished :: Board -> Bool
 isRoundFinished board = board^.visibleOnBoardCards == River
-                     && Map.size (Map.filter (^.isInGame) $ board^.players) == board^.stepsInRound
-                     || (Map.size $ Map.filter (^.isInGame) $ board^.players) == 1
-                     || (Map.size $ Map.filter ((> 0) . (^.playerMoney)) $ board^.players) < 2
-                     && all (\p -> p^.playerBet == getMaxBet board || p^.playerMoney == 0) (board^.players)
+                     && Map.size inGamePlayers == board^.stepsInRound
+                     || Map.size inGamePlayers == 1
+                     || Map.size (Map.filter ((>0) . (^.playerMoney)) inGamePlayers) < 2
+                     && all (\p -> p^.playerBet == getMaxBet board || p^.playerMoney == 0) inGamePlayers
+  where
+    inGamePlayers :: Players
+    inGamePlayers = Map.filter (^.isInGame) $ board^.players
 
 isGameFinished :: Board -> Bool
 isGameFinished board = 1 == board^.playersCount
