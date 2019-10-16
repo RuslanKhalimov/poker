@@ -13,16 +13,19 @@
 
 import           Control.Lens   ((^.))
 import qualified Data.Map       as Map
+import qualified Data.Set       as Set
 import           Data.Foldable  (fold)
 import qualified Graphics.Gloss as Gloss
 import           Network.Socket (Socket)
 
-import Board      ( Bank, Board, Player, Players, activePlayerId, banks, bankMoney, currentBet, isInGame, onBoardCards
-                  , needAction, needAnyKey, playerBet, playerCards, playerHandValue, playerId, playerMoney, playerName
-                  , players, timer)
+import Board      ( Bank, Board, Hand(Showdown), Player, Players, activePlayerId, banks, bankMoney, bankParticipants
+                  , currentBet, isInGame, onBoardCards, needAction, needAnyKey, playerBet, playerCards
+                  , playerHandValue, playerId, playerMoney, playerName, players, timer, visibleOnBoardCards)
 import BoardUtils (getFromActivePlayer)
-import Card       (Card)
+import Card       (Card, HandValue)
 import CardUtils  (fileNameFromCard)
+
+import Debug.Trace
 
 type Images = Map.Map String Gloss.Picture
 
@@ -72,6 +75,11 @@ renderRectangle color width height = Gloss.color color
                                    . Gloss.polygon
                                    $ Gloss.rectanglePath width height
 
+renderEmptyRectangle ::Float -> Float ->  Gloss.Color -> Gloss.Picture
+renderEmptyRectangle width height color = Gloss.color color
+                                        . Gloss.lineLoop
+                                        $ Gloss.rectanglePath width height
+
 renderWorld :: Images -> (Socket, Board) -> IO Gloss.Picture
 -- renderWorld (_, board) = return blank
 renderWorld images (_, board) = pure (renderBoard images board)
@@ -102,11 +110,13 @@ renderBoard images board =
       onBoardCardsPicture = renderOnBoardCards images $ board^.onBoardCards
       playersPicture      = renderPlayers images $ board^.players
       selectingPicture    = renderSelectingRect board
+      winnersHighlighting = renderWinnersHighlighting board
   in renderComponent 0 (controlPanelHeight / 2) [ deskPicture
                                                 , banksPicture
                                                 , onBoardCardsPicture
                                                 , selectingPicture
                                                 , playersPicture
+                                                , winnersHighlighting
                                                 ]
 
 renderBanks :: [Bank] -> Gloss.Picture
@@ -138,6 +148,53 @@ renderSelectingRect :: Board -> Gloss.Picture
 renderSelectingRect board = playerCardsBuilder (board^.activePlayerId)
                           $ renderRectangle (Gloss.light deskColor) (2*cardWidth) cardHeight
 
+renderWinnersHighlighting :: Board -> Gloss.Picture
+renderWinnersHighlighting board = highlight
+  where
+    highlight :: Gloss.Picture
+    highlight = if board^.visibleOnBoardCards == Showdown
+                then
+                  banksHighlight <> playersHighlight
+                else
+                  Gloss.blank
+
+    colors :: [Gloss.Color]
+    colors = [Gloss.green, Gloss.red, Gloss.blue]
+
+    banksHighlightBuilder :: [Gloss.Picture -> Gloss.Picture]
+    banksHighlightBuilder = [ Gloss.translate 0      (-55)
+                            , Gloss.translate (-100) (-55)
+                            , Gloss.translate 100    (-55)
+                            ]
+
+    banksHighlight :: Gloss.Picture
+    banksHighlight = Gloss.pictures
+                   . zipWith ($) banksHighlightBuilder
+                   . map (renderEmptyRectangle 50 18 . fst)
+                   . zip colors
+                   $ board^.banks
+
+    playersHighlight :: Gloss.Picture
+    playersHighlight = Gloss.pictures
+                     . map highlightPlayer
+                     . Map.elems
+                     $ board^.players
+
+    playerRectangles :: [Gloss.Picture]
+    playerRectangles = zipWith (flip ($)) colors
+                     [ renderEmptyRectangle (2*cardWidth + 8) (cardHeight + 8)
+                     , renderEmptyRectangle (2*cardWidth)     (cardHeight)
+                     , renderEmptyRectangle (2*cardWidth - 8) (cardHeight - 8)
+                     ]
+
+    highlightPlayer :: Player -> Gloss.Picture
+    highlightPlayer player = playerCardsBuilder (player^.playerId)
+                           . Gloss.pictures
+                           . map fst
+                           . filter (\(_, b) -> Set.member (player^.playerId) $ b^.bankParticipants)
+                           . zip playerRectangles
+                           $ board^.banks
+
 renderCards :: Images -> Player -> Gloss.Picture
 renderCards images player =
   if player^.isInGame
@@ -154,23 +211,25 @@ renderPlayerInfo :: Player -> Gloss.Picture
 renderPlayerInfo player =
   if player^.isInGame
   then
-    case player^.playerHandValue of
-      Nothing ->
-        let
-          [y1, y2, y3] = if player^.playerId == 1 then [(-30), (-15), 0] else [0, (-20), (-40)]
-        in playerInfoBuilder (player^.playerId)
-         . Gloss.pictures
-         $ [ renderInt          Gloss.white (-cardWidth / 2) y1 $ player^.playerBet
-           , renderStringCenter Gloss.white (-cardWidth / 2) y2 $ "BET"
-           , renderInt          Gloss.white ( cardWidth / 2) y1 $ player^.playerMoney
-           , renderStringCenter Gloss.white ( cardWidth / 2) y2 $ "MONEY"
-           , renderStringCenter Gloss.white  0               y3 $ player^.playerName
-           ]
-      Just handValue -> playerInfoBuilder (player^.playerId)
-                      . renderStringCenter Gloss.white 0 (-20)
-                      $ show handValue
+    let
+      [y1, y2, y3, y4] = if player^.playerId == 1
+                         then [(-30), (-15), 0, (-cardHeight - 55)]
+                         else [0, (-20), (-40), cardHeight + 25]
+    in playerInfoBuilder (player^.playerId)
+     . Gloss.pictures
+     $ [ renderInt          Gloss.white (-cardWidth / 2) y1 $ player^.playerBet
+       , renderStringCenter Gloss.white (-cardWidth / 2) y2 $ "BET"
+       , renderInt          Gloss.white ( cardWidth / 2) y1 $ player^.playerMoney
+       , renderStringCenter Gloss.white ( cardWidth / 2) y2 $ "MONEY"
+       , renderStringCenter Gloss.white  0               y3 $ player^.playerName
+       , renderHandValue                 0               y4 $ player^.playerHandValue
+       ]
   else
     Gloss.blank
+
+renderHandValue :: Float -> Float -> Maybe HandValue -> Gloss.Picture
+renderHandValue _ _ Nothing          = Gloss.blank
+renderHandValue x y (Just handValue) = renderStringCenter Gloss.white x y $ show handValue
 
 banksBuilder :: [Int -> Gloss.Picture]
 banksBuilder = [ renderInt Gloss.white 0      (-60)

@@ -165,23 +165,34 @@ getHandValues board = Map.map handValueFromCardSet
                     $ board^.players
 
 giveMoney :: Board -> Board
-giveMoney board = _giveMoney (board^.banks) $ banks .~ [initialBank] $ board
+giveMoney board = _giveMoney (filterParticipants (getHandValues board) $ board^.banks) board
   where
     initialBank :: Bank
     initialBank = Bank { _bankMoney        = 0
                        , _bankParticipants = Map.keysSet $ board^.players
                        }
 
+    filterParticipants :: Map.Map Int HandValue -> [Bank] -> [Bank]
+    filterParticipants handValues []        = []
+    filterParticipants handValues (bank:bs) =
+      let participants   = Map.filterWithKey (\k _ -> Set.member k $ bank^.bankParticipants) handValues
+          winCombination = maximum participants
+          winPlayers     = Map.filter (== winCombination) participants
+          filteredBank   = bankParticipants %~ Set.filter (flip Map.member winPlayers) $ bank
+      in
+        (filteredBank : filterParticipants handValues bs)
+
     _giveMoney :: [Bank] -> Board -> Board
     _giveMoney []        board = board
-    _giveMoney (bank:bs) board = _giveMoney bs
+    _giveMoney (bank:bs) board = banks .~ (bank:bs)
+                               $ _giveMoney bs
                                $ players %~ Map.map (giveMoneyToPlayer bank)
                                $ board
 
     giveMoneyToPlayer :: Bank -> Player -> Player
     giveMoneyToPlayer bank player =
       let handValues      = getHandValues board
-          participants   = Map.filterWithKey (\k _ -> Set.member k $ bank^.bankParticipants) handValues
+          participants    = Map.filterWithKey (\k _ -> Set.member k $ bank^.bankParticipants) handValues
           winCombination  = maximum participants
           winPlayers      = Map.filter (== winCombination) participants
       in

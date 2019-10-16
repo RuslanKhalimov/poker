@@ -4,7 +4,7 @@ import           Control.Lens ((^.), (.~), (%~))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-import Board        ( Bank(..), Board, Player, banks, isInGame, onBoardCards
+import Board        ( Bank(..), Board, Player, banks, bankParticipants, isInGame, onBoardCards
                     , playerBet, playerCards, playerMoney, players)
 import BoardUtils   (addBet, createBoardUsingGen, fillBanks, giveMoney, modifyPlayer)
 import Card         (Card(..), CardValue(..), Rank(..), Suit(..))
@@ -25,21 +25,25 @@ main = hspec $ do
     it "no banks" $
       giveMoney boardWithEqualHandValues `shouldBe` boardWithEqualHandValues
     it "one bank" $
-      giveMoney boardWithOneBank         `shouldBe` boardWithEqualHandValues
+      giveMoney boardWithOneBank         `shouldBe` (banks .~ boardWithOneBank ^.banks $ boardWithEqualHandValues)
     it "two banks" $
-      giveMoney boardWithTwoBanks        `shouldBe` boardWithEqualHandValues
+      giveMoney boardWithTwoBanks        `shouldBe` (banks .~ boardWithTwoBanks^.banks $ boardWithEqualHandValues)
 
   describe "BoardUtils.giveMoney (with winner)" $ do
     it "one winner" $
       giveMoney boardWithOneWinner  `shouldBe` ( players %~ Map.adjust (playerMoney .~ 1400) 0
-                                               $ banks   .~ [initialBank]
+                                               $ banks   .~ zipWith ($) [ bankParticipants .~ Set.singleton 0
+                                                                        , bankParticipants .~ Set.singleton 0
+                                                                        ] (boardWithOneWinner^.banks)
                                                $ boardWithOneWinner
                                                )
 
     it "two winners" $
       giveMoney boardWithTwoWinners `shouldBe` ( players %~ (Map.adjust (playerMoney .~ 1000) 0)
                                                           . (Map.adjust (playerMoney .~ 1300) 2)
-                                               $ banks   .~ [initialBank]
+                                               $ banks   .~ zipWith ($) [ bankParticipants .~ Set.singleton 0
+                                                                        , bankParticipants .~ Set.singleton 2
+                                                                        ] (boardWithTwoWinners^.banks)
                                                $ boardWithTwoWinners
                                                )
 
