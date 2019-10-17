@@ -1,4 +1,6 @@
- module RenderUtils
+{-# LANGUAGE TupleSections #-}
+
+module RenderUtils
   ( backgroundColor
   , betButtonX
   , buttonHeight
@@ -24,9 +26,7 @@ import Board      ( Bank, Board, Hand(Showdown), Player, Players, PlayerState(..
                   , visibleOnBoardCards)
 import BoardUtils (getFromActivePlayer)
 import Card       (Card, HandValue)
-import CardUtils  (fileNameFromCard)
-
-import Debug.Trace
+import CardUtils  (fileNameFromCard, fileNameFromCardValue)
 
 type Images = Map.Map String Gloss.Picture
 
@@ -81,10 +81,32 @@ renderEmptyRectangle width height color = Gloss.color color
                                         . Gloss.lineLoop
                                         $ Gloss.rectanglePath width height
 
-renderWorld :: Images -> (Socket, Board) -> IO Gloss.Picture
--- renderWorld (_, board) = return blank
-renderWorld images (_, board) = pure (renderBoard images board)
-                             <> pure (renderControlPanel images board)
+imagesDirectory :: FilePath
+imagesDirectory = "images/"
+
+imagesExtension :: String
+imagesExtension = ".bmp"
+
+loadImage :: String -> IO Gloss.Picture
+loadImage name = Gloss.loadBMP $ imagesDirectory ++ name ++ imagesExtension
+
+getImages :: IO Images
+getImages = do
+  cardBack   <- imageEntry "cardBack"
+  bet        <- imageEntry "bet"
+  check      <- imageEntry "check"
+  foldButton <- imageEntry "fold"
+  cards      <- mapM imageEntry . map (fileNameFromCardValue . toEnum) $ [0..51]
+
+  return . Map.fromList $ [cardBack, bet, check, foldButton] ++ cards
+    where
+      imageEntry :: String -> IO (String, Gloss.Picture)
+      imageEntry name = fmap (name, ) $ loadImage name
+
+renderWorld :: (Socket, Board) -> IO Gloss.Picture
+renderWorld (_, board) = do
+  images <- getImages
+  return $ Gloss.pictures [renderBoard images board, renderControlPanel images board]
 
 renderControlPanel :: Images -> Board -> Gloss.Picture
 renderControlPanel images board =

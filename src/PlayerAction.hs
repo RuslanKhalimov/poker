@@ -2,10 +2,10 @@
 
 module PlayerAction
   ( PlayerAction (..)
+  , applyAction
   , bet
   , check
   , foldCards
-  , quit
   ) where
 
 import           Control.Lens ((^.), (.~), (%~))
@@ -25,6 +25,13 @@ data PlayerAction = Fold
   deriving (Generic, Show)
 
 instance Binary PlayerAction where
+
+applyAction :: PlayerAction -> Board -> Board
+applyAction (Bet x) = bet x
+applyAction Check   = check
+applyAction Fold    = foldCards
+applyAction Ok      = id
+applyAction Quit    = quit
 
 makeBet :: Board -> Board
 makeBet board = modifyActivePlayer mapper $ needAction   .~ False

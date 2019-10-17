@@ -22,7 +22,7 @@ import           Board        ( Board, Hand(Showdown), PlayerState(..), activePl
                               , needAnyKey, playerBet, playerHandValue, playerId, playerName, players, playerState
                               , playersCount, stepsInRound, visibleOnBoardCards)
 import qualified BoardUtils as BU
-import           PlayerAction (PlayerAction (..), bet, check, foldCards, quit)
+import           PlayerAction (PlayerAction (..), applyAction)
 
 type Connections      = Map.Map Int Socket
 type SharedPlayerInfo = MVar (String, Socket)
@@ -117,13 +117,6 @@ waitPlayerConnection serverSocket = do
   putStrLn $ name ++ " from " ++ show addr ++ " connected"
   count              <- fmap decode $ recv clientSocket 32
   return (name, count, clientSocket)
-
-applyAction :: PlayerAction -> Board -> Board
-applyAction (Bet x) = bet x
-applyAction Check   = check
-applyAction Fold    = foldCards
-applyAction Ok      = id
-applyAction Quit    = quit
 
 gameLoop :: Int -> Connections -> Board -> IO ()
 gameLoop firstPlayerId connections board = do

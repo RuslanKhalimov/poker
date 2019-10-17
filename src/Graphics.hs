@@ -1,5 +1,3 @@
-{-# LANGUAGE TupleSections #-}
-
 module Graphics
   ( startGame
   ) where
@@ -17,7 +15,6 @@ import           Network.Socket.ByteString.Lazy (sendAll)
 
 import Board         (Board, needAction, needAnyKey, timer)
 import BoardUtils    (modifyActivePlayer)
-import CardUtils     (fileNameFromCardValue)
 import EventsHandler (handleEvent, waitAnyKey)
 import PlayerAction  (PlayerAction(Fold, Ok))
 import RenderUtils   ( backgroundColor, betButtonX, buttonHeight, buttonWidth, checkButtonX
@@ -31,32 +28,8 @@ displayMode = (Gloss.InWindow "Poker" screenSize screenPos)
 fps :: Int
 fps = 5
 
-imagesDirectory :: FilePath
-imagesDirectory = "images/"
-
-imagesExtension :: String
-imagesExtension = ".bmp"
-
-loadImage :: String -> IO Gloss.Picture
-loadImage name = Gloss.loadBMP $ imagesDirectory ++ name ++ imagesExtension
-
-images :: IO (Map.Map String Gloss.Picture)
-images = do
-  cardBack   <- imageEntry "cardBack"
-  bet        <- imageEntry "bet"
-  check      <- imageEntry "check"
-  foldButton <- imageEntry "fold"
-  cards      <- mapM imageEntry . map (fileNameFromCardValue . toEnum) $ [0..51]
-
-  return . Map.fromList $ [cardBack, bet, check, foldButton] ++ cards
-    where
-      imageEntry :: String -> IO (String, Gloss.Picture)
-      imageEntry name = fmap (name, ) $ loadImage name
-
 startGame :: World -> MVar Board -> IO ()
-startGame world recvMVar = do
-  imagesMap <- images
-  Game.playIO displayMode backgroundColor fps world (renderWorld imagesMap) handler (updater recvMVar)
+startGame world recvMVar = Game.playIO displayMode backgroundColor fps world renderWorld handler (updater recvMVar)
 
 handler :: Game.Event -> World -> IO World
 handler event world@(_, board) =
