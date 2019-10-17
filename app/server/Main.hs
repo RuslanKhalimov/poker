@@ -5,10 +5,11 @@ module Main
   ( main
   ) where
 
-import           Control.Concurrent             (forkFinally, threadDelay)
-import           Control.Concurrent.MVar        (MVar, newMVar, putMVar, takeMVar)
+import           Control.Concurrent             (forkFinally)
+import           Control.Concurrent.MVar        (MVar, newEmptyMVar, putMVar, takeMVar)
 import           Control.Exception              (IOException, SomeException, bracket, try)
 import           Control.Lens                   ((^.), (.~), (%~))
+import           Control.Monad                  (replicateM, when)
 import           Data.Binary                    (encode, decode)
 import qualified Data.Map as Map
 import           Network.Socket          hiding (recv, sendAll)
@@ -23,22 +24,20 @@ import           Board        ( Board, Hand(Showdown), PlayerState(..), activePl
 import qualified BoardUtils as BU
 import           PlayerAction (PlayerAction (..), bet, check, foldCards, quit)
 
-type Connections = Map.Map Int Socket
-type SharedBoard = MVar Board
+type Connections      = Map.Map Int Socket
+type SharedPlayerInfo = MVar (String, Socket)
 
 main :: IO()
 main = withSocketsDo $ do
-  args                 <- getArgs
-  (port, count) <- case args of port:count:[] -> return (port, read count)
-                                _             -> do
-                                                   putStrLn "IncorrectArguments"
-                                                   putStrLn "Excpected <port> <playersCount>"
-                                                   exitFailure
-
-  initialBoard <- BU.createBoard count
+  args <- getArgs
+  port <- case args of [port] -> return port
+                       _      -> do
+                                   putStrLn "Incorrect arguments"
+                                   putStrLn "Excpected <port>"
+                                   exitFailure
 
   addr <- resolve port
-  bracket (open addr count) close (runServer initialBoard)
+  bracket (open addr) close runServer
 
 resolve :: String -> IO AddrInfo
 resolve port = do
@@ -48,50 +47,76 @@ resolve port = do
   addr:_ <- getAddrInfo (Just hints) Nothing (Just port)
   return addr
 
-open :: AddrInfo -> Int -> IO Socket
-open addr count = do
-  sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  setSocketOption sock ReuseAddr count
-  bind sock (addrAddress addr)
-  listen sock count
-  return sock
+open :: AddrInfo -> IO Socket
+open addr = do
+  serverSocket <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  setSocketOption serverSocket ReuseAddr 1
+  bind serverSocket (addrAddress addr)
+  listen serverSocket 10
+  return serverSocket
 
-talkWithClient :: MVar Board -> (Int, Socket) -> IO ()
-talkWithClient boardMVar connection = do
-  board <- takeMVar boardMVar
-  sendBoard board connection
-  talkWithClient boardMVar connection
-
-handleException :: Either SomeException () -> IO ()
-handleException (Left exception) = putStrLn $ "Exception while sending board : " ++ show exception
-handleException _                = putStrLn "Game finished"
-
-runServer :: Board -> Socket -> IO ()
-runServer board sock = do
-  playersInfo    <- mapM (waitPlayerConnection sock) [0..board^.playersCount - 1]
-  let connections = map snd $ playersInfo
-  let names       = map fst playersInfo
-  let newBoard    = players %~ Map.map (\p -> playerName .~ names !! (p^.playerId) $ p) $ board
-  clientMVars    <- fmap Map.fromList
-                  . fmap (zip [0..])
-                  . mapM newMVar
-                  $ replicate (newBoard^.playersCount) newBoard
-  mapM_ (flip forkFinally handleException . (_talkWithClient clientMVars)) connections
-  gameLoop 0 (Map.fromList connections) clientMVars newBoard
+runGame :: Int -> SharedPlayerInfo -> IO ()
+runGame count mVar = do
+  initialBoard        <- BU.createBoard count
+  playersInfo         <- replicateM count $ takeMVar mVar
+  let (names, sockets) = unzip playersInfo
+  let boardWithNames   = players %~ Map.map (\p -> playerName .~ names !! (p^.playerId) $ p) $ initialBoard
+  let connections      = Map.fromList $ zip [0..] sockets
+  putStrLn "Start game with players : "
+  mapM_ printPlayerInfo playersInfo
+  forkFinally (gameLoop 0 connections boardWithNames) (handleException playersInfo)
+  runGame count mVar
     where
-      _talkWithClient :: Map.Map Int SharedBoard -> (Int, Socket) -> IO ()
-      _talkWithClient clientMVars connection@(_id, _) = talkWithClient (clientMVars Map.! _id) connection
+      printPlayerInfo :: (String, Socket) -> IO ()
+      printPlayerInfo (name, socket) =
+        putStrLn $ "  " ++ show name ++ " from " ++ show socket
 
-waitPlayerConnection :: Socket -> Int -> IO (String, (Int, Socket))
-waitPlayerConnection sock _id = do
-  (clientSock, addr) <- accept sock
-  name               <- fmap decode $ recv clientSock 32
+      handleException :: [(String, Socket)] -> Either SomeException a -> IO ()
+      handleException playersInfo (Left exception) = do
+        putStrLn $ "Exception (" ++ show exception ++ ") in game with players"
+        mapM_ printPlayerInfo playersInfo
+      handleException playersInfo _                = do
+        putStrLn "Game finished,  players : "
+        mapM_ printPlayerInfo playersInfo
+
+runServer :: Socket -> IO ()
+runServer serverSocket = do
+  twoPlayersMVar   <- newEmptyMVar
+  threePlayersMVar <- newEmptyMVar
+  fourPlayersMVar  <- newEmptyMVar
+  forkFinally (runGame 2 twoPlayersMVar)   (handleException 2)
+  forkFinally (runGame 3 threePlayersMVar) (handleException 3)
+  forkFinally (runGame 4 fourPlayersMVar)  (handleException 4)
+  acceptPlayersLoop twoPlayersMVar threePlayersMVar fourPlayersMVar serverSocket
+    where
+      handleException :: Int -> Either SomeException a -> IO ()
+      handleException count (Left exception) =
+        putStrLn $ "Exception (" ++ show exception ++ ") in server with " ++ show count ++ " players"
+      handleException count _                =
+        putStrLn $ "Server with " ++ show count ++ " players finished"
+
+acceptPlayersLoop :: SharedPlayerInfo -> SharedPlayerInfo -> SharedPlayerInfo -> Socket -> IO ()
+acceptPlayersLoop twoPlayersMVar threePlayersMVar fourPlayersMVar serverSocket = do
+  (name, count, clientSocket) <- waitPlayerConnection serverSocket
+  case count of
+    2 -> successfulConnection name clientSocket twoPlayersMVar
+    3 -> successfulConnection name clientSocket threePlayersMVar
+    4 -> successfulConnection name clientSocket fourPlayersMVar
+    _ -> sendAll clientSocket $ encode "Unsupported players count"
+  acceptPlayersLoop twoPlayersMVar threePlayersMVar fourPlayersMVar serverSocket
+
+successfulConnection :: String -> Socket -> SharedPlayerInfo -> IO ()
+successfulConnection name clientSocket mVar = do
+  sendAll clientSocket $ encode "Connected"
+  putMVar mVar (name, clientSocket)
+
+waitPlayerConnection :: Socket -> IO (String, Int, Socket)
+waitPlayerConnection serverSocket = do
+  (clientSocket, addr) <- accept serverSocket
+  name               <- fmap decode $ recv clientSocket 32
   putStrLn $ name ++ " from " ++ show addr ++ " connected"
-  return (name, (_id, clientSock))
-
-shareBoard :: Connections -> Map.Map Int SharedBoard -> Board -> IO ()
-shareBoard connections clientMVars board = do
-  mapM_ (\_id -> putMVar (clientMVars Map.! _id) board) $ Map.keysSet connections
+  count              <- fmap decode $ recv clientSocket 32
+  return (name, count, clientSocket)
 
 applyAction :: PlayerAction -> Board -> Board
 applyAction (Bet x) = bet x
@@ -100,9 +125,9 @@ applyAction Fold    = foldCards
 applyAction Ok      = id
 applyAction Quit    = quit
 
-gameLoop :: Int -> Connections -> Map.Map Int SharedBoard -> Board -> IO ()
-gameLoop firstPlayerId connections clientMVars board = do
-  shareBoard connections clientMVars board
+gameLoop :: Int -> Connections -> Board -> IO ()
+gameLoop firstPlayerId connections board = do
+  shareBoard connections board
   action            <- recvAction (connections Map.! (board^.activePlayerId))
   let updatedBoard   = applyAction action board
   let newConnections = Map.filterWithKey (\_id _ -> Map.member _id $ updatedBoard^.players) connections
@@ -110,15 +135,15 @@ gameLoop firstPlayerId connections clientMVars board = do
   let newBoard = BU.mergeBoards updatedBoard board
   if BU.isRoundFinished newBoard
   then do
-    finalBoard <- finishRound firstPlayerId newConnections clientMVars newBoard
+    finalBoard <- finishRound firstPlayerId newConnections newBoard
     if BU.isGameFinished finalBoard
     then
-      finishGame newConnections clientMVars finalBoard
+      finishGame newConnections finalBoard
     else do
       (TOD time _) <- getClockTime
       let nextRoundBoard = BU.nextDeal time (BU.getNextId finalBoard firstPlayerId) False finalBoard
       let nextPlayerId  = BU.getNextId nextRoundBoard firstPlayerId
-      gameLoop nextPlayerId newConnections clientMVars nextRoundBoard
+      gameLoop nextPlayerId newConnections nextRoundBoard
   else
     if newBoard^.stepsInRound == Map.size (Map.filter (^.isInGame) $ newBoard^.players)
     then do
@@ -128,12 +153,12 @@ gameLoop firstPlayerId connections clientMVars board = do
                      $ activePlayerId      .~ (BU.getNextId newBoard . BU.getNextId newBoard $ firstPlayerId)
                      $ players             %~ Map.map (playerBet .~ 0)
                      $ newBoard
-      gameLoop firstPlayerId newConnections clientMVars finalBoard
+      gameLoop firstPlayerId newConnections finalBoard
     else do
-      gameLoop firstPlayerId newConnections clientMVars $ activePlayerId %~ BU.getNextId newBoard $ newBoard
+      gameLoop firstPlayerId newConnections $ activePlayerId %~ BU.getNextId newBoard $ newBoard
 
 sendBoard :: Board -> (Int, Socket) -> IO ()
-sendBoard board (_id, sock) = do
+sendBoard board (_id, socket) = do
   let updatedPlayerState = if Map.member _id $ board^.players
                            then if board^.playersCount == 1
                                 then
@@ -142,27 +167,33 @@ sendBoard board (_id, sock) = do
                                   Playing
                            else
                              Loser
-  sendAll sock . encode
-               $ playerState .~ updatedPlayerState
-               $ (if board^.visibleOnBoardCards == Showdown
-                  then (needAction .~ False)
-                  else BU.hideCards (board^.visibleOnBoardCards) _id
-                  )
-               $ needAnyKey .~ (board^.visibleOnBoardCards == Showdown && updatedPlayerState == Playing)
-               $ board
+  (_ :: Either IOException ()) <- try
+    $ sendAll socket . encode
+    $ playerState .~ updatedPlayerState
+    $ (if board^.visibleOnBoardCards == Showdown
+       then (needAction .~ False)
+       else BU.hideCards (board^.visibleOnBoardCards) _id
+      )
+    $ needAnyKey .~ (board^.visibleOnBoardCards == Showdown && updatedPlayerState == Playing)
+    $ board
+  return ()
+
+shareBoard :: Connections -> Board -> IO ()
+shareBoard connections board = mapM_ (sendBoard board) $ Map.toList connections
 
 recvAction :: Socket -> IO PlayerAction
-recvAction sock = do
-  message <- try $ recv sock 512
+recvAction socket = do
+  message <- try $ recv socket 512
   case message of
     Left (exception :: IOException) -> do
                                          putStrLn $ "Exception while receiving action from "
-                                                 ++ show sock ++ ": " ++ show exception
+                                                 ++ show socket ++ ": " ++ show exception
+                                         putStrLn $ "Player from " ++ show socket ++ " disconnected"
                                          return Quit
     Right action                    -> return $ decode action
 
-finishRound :: Int -> Connections -> Map.Map Int SharedBoard -> Board -> IO Board
-finishRound firstPlayerId connections clientMVars board = do
+finishRound :: Int -> Connections -> Board -> IO Board
+finishRound firstPlayerId connections board = do
   let handValues = BU.getHandValues board
   let finalBoard = BU.giveMoney
                  $ banks               .~ (BU.fillBanks board)^.banks
@@ -179,13 +210,13 @@ finishRound firstPlayerId connections clientMVars board = do
                                                   )
                  $ board
 
-  shareBoard connections clientMVars finalBoard
+  shareBoard connections finalBoard
   mapM_ recvAction connections
 
   return $ BU.kickPlayers finalBoard
 
-finishGame :: Connections -> Map.Map Int SharedBoard -> Board -> IO ()
-finishGame connections clientMVars board = do
-  shareBoard connections clientMVars board
+finishGame :: Connections -> Board -> IO ()
+finishGame connections board = do
+  shareBoard connections board
   let (_id, lastPlayer) = head . Map.toList $ board^.players
   putStrLn $ "Winner is " ++ lastPlayer^.playerName ++ " with id " ++ show _id
