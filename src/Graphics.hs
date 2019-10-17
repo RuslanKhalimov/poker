@@ -5,6 +5,7 @@ module Graphics
 import           Control.Concurrent.MVar        (MVar, tryTakeMVar)
 import           Control.Lens                   ((^.), (%~))
 import           Control.Monad                  (when)
+import           Control.Monad.State            (State, runState)
 import           Data.Binary                    (encode)
 import qualified Data.Map                         as Map
 import           Data.Maybe                     (fromMaybe)
@@ -42,9 +43,9 @@ handler event world@(_, board) =
   else
     return world
 
-handle :: (Game.Event -> Board -> (Board, Maybe PlayerAction)) -> Game.Event -> World -> IO World
+handle :: (Game.Event -> State Board (Maybe PlayerAction)) -> Game.Event -> World -> IO World
 handle callback event (sock, board) = do
-  let (newBoard, action) = callback event board
+  let (action, newBoard) = runState (callback event) board
   case action of
     Nothing -> return (sock, newBoard)
     Just ac -> do

@@ -43,6 +43,7 @@ library
     , containers
     , gloss >= 1.7.7.1
     , lens
+    , mtl
     , network
     , old-time
     , random
