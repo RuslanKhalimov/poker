@@ -18,7 +18,7 @@ module BoardUtils
   , nextDeal
   ) where
 
-import           Control.Lens          ((^.), (.~), (%~))
+import           Control.Lens          ((^.), (.~), (%~), (-~), (+~))
 import           Data.List             (zip4)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -86,8 +86,8 @@ nextDeal time smallBlindId isFirstTime board = setBlinds smallBlindId
     dealCards cnt deck acc = dealCards (cnt - 1) (drop 2 deck) (take 2 deck : acc)
 
 addBet :: Int -> Player -> Player
-addBet x player = playerBet   %~ (+x)
-                $ playerMoney %~ (x `subtract`)
+addBet x player = playerBet   +~ x
+                $ playerMoney -~ x
                 $ player
 
 setBlinds :: Int -> Board -> Board
@@ -171,11 +171,6 @@ getHandValues board = Map.map handValueFromCardSet
 giveMoney :: Board -> Board
 giveMoney board = _giveMoney (filterParticipants (getHandValues board) $ board^.banks) board
   where
-    initialBank :: Bank
-    initialBank = Bank { _bankMoney        = 0
-                       , _bankParticipants = Map.keysSet $ board^.players
-                       }
-
     filterParticipants :: Map.Map Int HandValue -> [Bank] -> [Bank]
     filterParticipants handValues []        = []
     filterParticipants handValues (bank:bs) =
@@ -202,7 +197,7 @@ giveMoney board = _giveMoney (filterParticipants (getHandValues board) $ board^.
       in
         if Map.member (player^.playerId) winPlayers
         then
-          playerMoney %~ (+ (bank^.bankMoney `div` Map.size winPlayers)) $ player
+          playerMoney +~ bank^.bankMoney `div` Map.size winPlayers $ player
         else
           player
 
@@ -243,8 +238,8 @@ fillBanks board =
     playerBets    = Map.map (^.playerBet) $ board^.players
     nonZeroBets   = Map.filter (> 0) . Map.map (^.playerBet) . Map.filter (^.isInGame) $ board^.players
     minBet        = if Map.null nonZeroBets then 0 else minimum nonZeroBets
-    forEqualBank  = bankMoney %~ (+ (sum . Map.map (^.playerBet) $ board^.players)) $ bank
-    newBank       = bankMoney %~ (+ (sum . Map.map (min minBet . (^.playerBet)) $ board^.players)) $ bank
+    forEqualBank  = bankMoney +~ (sum . Map.map (^.playerBet) $ board^.players) $ bank
+    newBank       = bankMoney +~ (sum . Map.map (min minBet . (^.playerBet)) $ board^.players) $ bank
     newPlayerBets = Map.map (max 0 . (minBet `subtract`)) playerBets
     newPlayers    = Map.map (\p -> playerBet .~ newPlayerBets Map.! (p^.playerId) $ p) $ board^.players
   in
